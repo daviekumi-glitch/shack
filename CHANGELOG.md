@@ -2,6 +2,34 @@
 
 Every change, in plain language. Newest first.
 
+## 2.1.9 - she has feelings, and she stops pushing you
+
+*She has moods now.* Nine of them, kept by a small engine on the phone: calm, happy,
+playful, shy, serious, annoyed, angry, sad and a little jealous. What you say moves
+her. Warmth makes her happy, a compliment makes her shy, being brushed off makes her
+annoyed, an insult makes her angry, another assistant makes her jealous, a crisis
+makes her serious. The mood colours how she replies and how long her answers are, and
+it fades back to calm on its own after a few minutes, so she never gets stuck sulking.
+The little line under her name shows it when it is not calm: "feeling annoyed".
+
+*She talks like a person.* A proper persona, not an assistant script. She has opinions,
+can disagree, teases, can be unimpressed, and says in one line when something stung or
+pleased her, then carries on. She does not perform emotions she is not feeling and she
+never refuses to help because of a mood.
+
+*Voice, checked end to end.* The sound check now tries every route out loud and tells
+you which one worked: the device voice, the online voice, and any speech command on
+the phone. It reported each one instead of assuming. Two bugs came out of that. A
+single failed sentence could mute her for the rest of the session, because one error
+was treated as a dead engine; she now keeps trying and only gives up after three quiet
+sentences in a row. And an em dash was being read back with a stray pause, so
+punctuation is cleaned properly now.
+
+*No more pressure.* The "How can I help you today?" opener is gone, replaced by
+"I'm here". She is told plainly never to nag: no question at the end of every reply,
+no repeating something you ignored, no nudging about reminders, tasks or how long you
+took, and no pushing you to keep talking. If you go quiet, she lets you.
+
 ## 2.1.8 - a second way to speak, for phones that refuse to
 
 Your phone's speech engine will not start for this app at all, which is why the Voice

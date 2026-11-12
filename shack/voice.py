@@ -57,7 +57,9 @@ def clean_for_speech(text: str) -> str:
     text = re.sub(r"```.*?```", " ", text, flags=re.S)
     text = _MARKDOWN.sub(" ", text)
     text = _EMOJI.sub(" ", text)
-    text = text.replace("—", ", ").replace("–", ", ").replace(" ;", ",")
+    text = text.replace("—", ",").replace("–", ",").replace(" ;", ",")
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
+    text = re.sub(r"\(\s*\)|\[\s*\]", " ", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
@@ -158,6 +160,30 @@ class Voice:
 
     listen_error = ""
 
+    def self_test(self) -> list[tuple[str, bool, str]]:
+        """Try every route out loud and report which ones actually produce sound."""
+        results: list[tuple[str, bool, str]] = []
+        line = "Hi, it is me. This is how I sound."
+        if self._android is not None:
+            if getattr(self._android, "ok", False):
+                ok = bool(self._android.prove_audio())
+                results.append(("device voice", ok, "" if ok else (self._android.last_error or "no sound")))
+            else:
+                results.append(("device voice", False, self.android_error or "engine would not start"))
+        speaker = self._http or self._make_http()
+        if speaker is not None:
+            self._http = speaker
+            ok = bool(speaker.say(line))
+            results.append(("online voice", ok, "" if ok else (speaker.last_error or "no audio")))
+        else:
+            results.append(("online voice", False, "no audio player in this build"))
+        for name in ("termux-tts-speak", "espeak-ng", "espeak"):
+            path = _which(name)
+            if path:
+                ok = self._run(path, name, line)
+                results.append((name, ok, "" if ok else "command failed"))
+        return results
+
     def config_dir(self):
         from .config import Config
 
@@ -202,12 +228,19 @@ class Voice:
             self._http = self._http or self._make_http()
             if self._http is not None and self._http.say(text):
                 self.speaker = ("http", "online")
+                self._http_failures = 0
             return
 
         if name == "http":
             if self._http is not None and self._http.say(text):
+                self._http_failures = 0
                 return
-            self.speaker = self._detect_speaker()
+            self._http_failures = getattr(self, "_http_failures", 0) + 1
+            if self._http_failures >= 3:
+                # three sentences in a row with no audio: stop pretending, but keep the
+                # route so the next message can try again once the connection is back
+                self.speaker = ("http", "online")
+            return
 
         if name == "plyer-tts":
             for chunk in pace(text):
@@ -225,7 +258,7 @@ class Voice:
                 if self._http is not None and self._http.say(text):
                     self.speaker = ("http", "online")
                 else:
-                    self.speaker = None
+                    self.speaker = (name, path)
                 return
             time.sleep(0.08 if name != "termux-tts-speak" else 0.0)
 

@@ -141,7 +141,7 @@ class VoiceTests(unittest.TestCase):
         self.assertLess(int(cmd[cmd.index("-s") + 1]), 175)  # slower than default
 
     def test_speech_is_cleaned_and_split(self) -> None:
-        self.assertEqual(clean_for_speech("**hi** 🎉 — ok"), "hi , ok")
+        self.assertEqual(clean_for_speech("**hi** 🎉 — ok"), "hi, ok")
         self.assertEqual(pace("One. Two! Three?"), ["One.", "Two!", "Three?"])
 
 

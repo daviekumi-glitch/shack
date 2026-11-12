@@ -388,7 +388,7 @@ class ShackScreen(BoxLayout):
             font_size=dp(15),
         )
         self.sub_label = Label(
-            text="How can I help you today?",
+            text="I'm here.",
             color=LILAC,
             size_hint_y=None,
             height=dp(24),
@@ -537,16 +537,23 @@ class ShackScreen(BoxLayout):
     def set_status(self, text: str) -> None:
         self.status = text
         pretty = {
-            "Ready": ("SHACK Ready", "How can I help you today?"),
+            "Ready": ("SHACK Ready", self._mood_line()),
             "thinking": ("Thinking...", "One moment."),
             "listening": ("Listening...", "Go ahead, I am here."),
             "speaking": ("Speaking...", ""),
             "needs key": ("Needs a key", "Paste your Groq key below."),
             "starting": ("Waking up...", ""),
         }
-        top, bottom = pretty.get(text, ("SHACK Ready", "How can I help you today?"))
+        top, bottom = pretty.get(text, ("SHACK Ready", self._mood_line()))
         self.status_label.text = top
         self.sub_label.text = bottom
+
+    def _mood_line(self) -> str:
+        """A quiet hint of how she feels, never a demand for attention."""
+        mood = getattr(getattr(self.agent, "mood", None), "label", None)
+        if not mood or mood == "calm":
+            return "I'm here."
+        return f"feeling {mood}"
 
     def boot(self) -> None:
         os.environ.setdefault("SHACK_DATA_DIR", data_dir())
@@ -699,22 +706,38 @@ class ShackScreen(BoxLayout):
         threading.Thread(target=work, daemon=True).start()
 
     def check_sound(self) -> None:
-        """Say, in plain words, why the phone is quiet."""
+        """Try every way she can speak, and report which ones really make sound."""
         if self.agent is None:
             self.note("Not ready yet.")
             return
-        android = getattr(self.agent.voice, "_android", None)
-        lines = [f"Voice: {self.agent.voice.profile.label}."]
-        if android is None:
-            lines.append("No Android speech engine is loaded, so she cannot talk out loud.")
-        else:
-            lines.append(android.diagnose().capitalize() + ".")
-            if getattr(android, "last_error", ""):
-                lines.append(android.last_error.capitalize() + ".")
-        lines.append("If it is quiet: turn the media volume up, check the phone is not on silent, and in Android Settings, System, Languages, Text-to-speech, make sure a Google speech engine is installed.")
-        for line in lines:
-            self.note(line, "note")
-        self.say_with_face("Testing one, two, three. Can you hear me now?")
+        voice = self.agent.voice
+        self.note(f"Voice: {voice.profile.label}.", "note")
+
+        def work() -> None:
+            try:
+                results = voice.self_test()
+            except Exception as exc:  # noqa: BLE001 - the check itself must not crash
+                reason = str(exc)[:160]
+                Clock.schedule_once(lambda *_: self.note(f"The check failed: {reason}", "note"), 0)
+                return
+
+            def report(*_):
+                for name, ok, error in results:
+                    if ok:
+                        self.note(f"{name}: working, you should have heard it.", "note")
+                    else:
+                        self.note(f"{name}: failed, {error}.", "note")
+                if not any(ok for _, ok, _ in results):
+                    self.note(
+                        "Nothing on the phone would speak. Turn the media volume up, "
+                        "check silent mode, and make sure the phone has data.",
+                        "note",
+                    )
+                self.sub_label.text = self._mood_line()
+
+            Clock.schedule_once(report, 0)
+
+        threading.Thread(target=work, daemon=True).start()
 
     MIC_SECONDS = 10
 
