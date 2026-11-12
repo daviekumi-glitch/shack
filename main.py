@@ -14,14 +14,17 @@ import time
 os.environ.setdefault("KIVY_NO_ARGS", "1")
 
 from kivy.animation import Animation
+from kivy.graphics import Color, Line, RoundedRectangle
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.metrics import dp
 from kivy.properties import StringProperty
+from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.widget import Widget
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
-from kivy.uix.image import Image as Picture
+from kivy.uix.image import Image as KivyImage
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
@@ -31,9 +34,17 @@ Window.softinput_mode = "below_target"
 
 ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 
-CYAN = (0.35, 0.85, 0.95, 1)
-DIM = (0.62, 0.66, 0.72, 1)
-BG = (0.06, 0.07, 0.09, 1)
+# Violet night palette, after the Aura reference design.
+BG = (0.035, 0.027, 0.07, 1)
+PANEL = (0.09, 0.075, 0.15, 1)
+PANEL_EDGE = (0.30, 0.24, 0.42, 0.55)
+LILAC = (0.88, 0.67, 1.0, 1)
+PINK = (0.93, 0.55, 0.95, 1)
+TEXT = (0.95, 0.93, 1.0, 1)
+DIM = (0.70, 0.62, 0.86, 1)
+USER_BUBBLE = (0.20, 0.16, 0.33, 1)
+SHACK_BUBBLE = (0.28, 0.17, 0.40, 1)
+CYAN = LILAC  # kept for the bits of code that still say CYAN
 
 
 def data_dir() -> str:
@@ -85,78 +96,223 @@ def save_key(key: str) -> None:
     os.environ["GROQ_KEY"] = key
 
 
-class Bubble(Label):
+class Picture(KivyImage):
+    """Image that keeps its proportions and scales smoothly."""
+
+    def __init__(self, **kwargs) -> None:
+        kwargs.setdefault("allow_stretch", True)
+        kwargs.setdefault("keep_ratio", True)
+        super().__init__(**kwargs)
+
+
+def _round_fill(widget, colour, radius, edge=None):
+    """Paint a rounded panel behind a widget and keep it in step as it resizes."""
+    with widget.canvas.before:
+        Color(*colour)
+        shape = RoundedRectangle(pos=widget.pos, size=widget.size, radius=[radius])
+        outline = None
+        if edge:
+            Color(*edge)
+            outline = Line(rounded_rectangle=(*widget.pos, *widget.size, radius), width=1)
+
+    def follow(*_):
+        shape.pos = widget.pos
+        shape.size = widget.size
+        if outline is not None:
+            outline.rounded_rectangle = (*widget.pos, *widget.size, radius)
+
+    widget.bind(pos=follow, size=follow)
+    return shape
+
+
+class Bubble(BoxLayout):
+    """One chat message: a rounded bubble, you on the right, SHACK on the left."""
+
     def __init__(self, text: str, speaker: str = "shack", **kwargs) -> None:
-        colour = {"you": (0.75, 0.95, 0.8, 1), "shack": CYAN, "note": DIM}.get(
-            speaker, DIM
-        )
-        tag = {"you": "you", "shack": "SHACK", "note": ""}.get(speaker, speaker)
-        prefix = f"[b]{tag}[/b]  " if tag else ""
         super().__init__(
-            text=f"{prefix}{text}",
-            markup=True,
-            color=colour,
+            orientation="horizontal",
             size_hint_y=None,
-            halign="left",
-            valign="top",
-            padding=(dp(10), dp(6)),
+            padding=(dp(4), dp(3)),
+            spacing=dp(6),
             **kwargs,
         )
-        self.bind(width=lambda *_: setattr(self, "text_size", (self.width, None)))
-        self.bind(texture_size=lambda *_: setattr(self, "height", self.texture_size[1]))
+        mine = speaker == "you"
+        note = speaker == "note"
+        colour = USER_BUBBLE if mine else (PANEL if note else SHACK_BUBBLE)
+        ink = TEXT if not note else DIM
+
+        self.label = Label(
+            text=text,
+            color=ink,
+            size_hint=(None, None),
+            halign="left",
+            valign="middle",
+            padding=(dp(14), dp(10)),
+            font_size=dp(15),
+        )
+        max_w = lambda: max(dp(120), Window.width * 0.70)  # noqa: E731
+
+        def fit(*_):
+            # measure the text unconstrained first so short messages get short bubbles
+            self.label.text_size = (None, None)
+            self.label.texture_update()
+            natural_w = self.label.texture_size[0]
+            inner = max_w() - dp(28)
+            if natural_w > inner:
+                self.label.text_size = (inner, None)
+                self.label.texture_update()
+            tw, th = self.label.texture_size
+            self.label.size = (min(max_w(), tw + dp(28)), th + dp(20))
+            self.height = self.label.height + dp(6)
+
+        self.label.bind(text=fit)
+        Window.bind(width=fit)
+        fit()
+        _round_fill(self.label, colour, dp(18), edge=PANEL_EDGE if not mine else None)
+
+        spark = Picture(
+            source=os.path.join(ASSETS, "sparkle.png"),
+            size_hint=(None, None),
+            size=(dp(26), dp(26)),
+        )
+        gap = Widget()
+        if mine:
+            self.add_widget(gap)
+            self.add_widget(self.label)
+        elif note:
+            self.add_widget(Widget(size_hint_x=None, width=dp(32)))
+            self.add_widget(self.label)
+            self.add_widget(gap)
+        else:
+            column = BoxLayout(orientation="vertical", size_hint=(None, 1), width=dp(30))
+            column.add_widget(Widget())
+            column.add_widget(spark)
+            self.add_widget(column)
+            self.add_widget(self.label)
+            self.add_widget(gap)
+
+
+class IconButton(Button):
+    """A flat glyph button with no grey slab behind it."""
+
+    def __init__(self, glyph: str = "", image: str = "", **kwargs) -> None:
+        super().__init__(
+            text=glyph,
+            background_normal="",
+            background_down="",
+            background_color=(0, 0, 0, 0),
+            color=LILAC,
+            font_size=dp(20),
+            **kwargs,
+        )
+        if image:
+            pic = Picture(source=os.path.join(ASSETS, image))
+            self.bind(
+                pos=lambda *_: setattr(pic, "pos", (self.x + dp(6), self.y + dp(6))),
+                size=lambda *_: setattr(pic, "size", (self.width - dp(12), self.height - dp(12))),
+            )
+            self.add_widget(pic)
 
 
 class ShackScreen(BoxLayout):
     status = StringProperty("starting")
 
     def __init__(self, **kwargs) -> None:
-        super().__init__(orientation="vertical", padding=dp(6), spacing=dp(6), **kwargs)
+        super().__init__(orientation="vertical", padding=dp(10), spacing=dp(8), **kwargs)
         self.agent = None
         self.busy = False
 
-        head = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(6))
-        face = Picture(
-            source=os.path.join(ASSETS, "avatar.png"), size_hint_x=None, width=dp(34)
+        # ---- header: sparkle, SHACK, and three round-ish controls
+        head = BoxLayout(size_hint_y=None, height=dp(54), padding=(dp(12), dp(6)), spacing=dp(8))
+        _round_fill(head, PANEL, dp(20), edge=PANEL_EDGE)
+        logo = Picture(
+            source=os.path.join(ASSETS, "sparkle.png"), size_hint=(None, 1), width=dp(34)
         )
-        head.add_widget(face)
+        self._avatar = logo
         title = Label(
-            text="[b]SHACK[/b]", markup=True, color=CYAN, halign="left", valign="middle"
+            text="SHACK",
+            color=PINK,
+            bold=True,
+            font_size=dp(24),
+            halign="left",
+            valign="middle",
+            size_hint_x=1,
         )
-        title.bind(size=lambda *_: setattr(title, "text_size", (title.width, None)))
-        self.status_label = Label(text=self.status, color=DIM, halign="right", valign="middle")
-        self.status_label.bind(size=lambda *_: setattr(self.status_label, "text_size", (self.status_label.width, None)))
-        voice_btn = Button(text="Voice", size_hint_x=None, width=dp(64))
-        voice_btn.bind(on_release=lambda *_: self.cycle_voice())
+        title.bind(size=lambda *_: setattr(title, "text_size", (title.width, title.height)))
+        self._voice_btn = IconButton(glyph="Voice", size_hint=(None, 1), width=dp(64))
+        self._voice_btn.font_size = dp(13)
+        self._voice_btn.bind(on_release=lambda *_: self.sample_voice())
+        mic_top = IconButton(glyph="Mic", size_hint=(None, 1), width=dp(48))
+        mic_top.font_size = dp(13)
+        mic_top.bind(on_release=lambda *_: self.listen())
+        head.add_widget(logo)
         head.add_widget(title)
-        head.add_widget(self.status_label)
-        head.add_widget(voice_btn)
+        head.add_widget(self._voice_btn)
+        head.add_widget(mic_top)
         self.add_widget(head)
 
+        # ---- stage: the orb, with "SHACK Ready" under it
+        stage = BoxLayout(orientation="vertical", size_hint_y=0.46, spacing=dp(4))
+        orb_box = FloatLayout()
+        self._hero_pic = Picture(
+            source=os.path.join(ASSETS, "hero_round.png"),
+            size_hint=(None, None),
+            size=(dp(190), dp(190)),
+            pos_hint={"center_x": 0.5, "center_y": 0.5},
+        )
+        orb_box.add_widget(self._hero_pic)
+        stage.add_widget(orb_box)
+        self.status_label = Label(
+            text="SHACK Ready",
+            color=LILAC,
+            size_hint_y=None,
+            height=dp(22),
+            font_size=dp(15),
+        )
+        self.sub_label = Label(
+            text="How can I help you today?",
+            color=LILAC,
+            size_hint_y=None,
+            height=dp(24),
+            font_size=dp(15),
+        )
+        stage.add_widget(self.status_label)
+        stage.add_widget(self.sub_label)
+        self.add_widget(stage)
+        self._hero = stage
+
+        # ---- conversation panel
+        panel = BoxLayout(orientation="vertical", padding=(dp(6), dp(6)))
+        _round_fill(panel, PANEL, dp(22), edge=PANEL_EDGE)
         self.log = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(4))
         self.log.bind(minimum_height=self.log.setter("height"))
-        scroll = ScrollView(bar_width=dp(3))
+        scroll = ScrollView(bar_width=dp(3), bar_color=PANEL_EDGE)
         scroll.add_widget(self.log)
-        self.add_widget(scroll)
+        panel.add_widget(scroll)
         self.scroll = scroll
+        self.add_widget(panel)
 
-        bar = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(4))
+        # ---- input pill
+        bar = BoxLayout(size_hint_y=None, height=dp(52), padding=(dp(14), dp(4)), spacing=dp(6))
+        _round_fill(bar, PANEL, dp(26), edge=PANEL_EDGE)
         self.entry = TextInput(
-            hint_text="Ask SHACK anything",
+            hint_text="Ask anything...",
             multiline=False,
             write_tab=False,
-            background_color=(0.13, 0.15, 0.18, 1),
-            foreground_color=(0.95, 0.97, 1, 1),
-            cursor_color=CYAN,
-            padding=(dp(10), dp(10)),
+            background_normal="",
+            background_active="",
+            background_color=(0, 0, 0, 0),
+            foreground_color=TEXT,
+            hint_text_color=(0.62, 0.52, 0.80, 1),
+            cursor_color=PINK,
+            padding=(dp(2), dp(13)),
+            font_size=dp(16),
         )
         self.entry.bind(on_text_validate=lambda *_: self.send())
-        send = Button(text="Send", size_hint_x=None, width=dp(64))
+        send = IconButton(image="sparkle.png", size_hint=(None, 1), width=dp(44))
         send.bind(on_release=lambda *_: self.send())
-        mic = Button(text="Mic", size_hint_x=None, width=dp(56))
-        mic.bind(on_release=lambda *_: self.listen())
         bar.add_widget(self.entry)
         bar.add_widget(send)
-        bar.add_widget(mic)
         self.add_widget(bar)
 
     # ------------------------------------------------------------------ setup
@@ -164,31 +320,88 @@ class ShackScreen(BoxLayout):
         Clock.schedule_once(lambda *_: self.boot(), 0.2)
 
     def show_face(self) -> None:
-        """The hero avatar, breathing slowly until the first message."""
-        hero = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(230), spacing=dp(4))
-        picture = Picture(source=os.path.join(ASSETS, "hero.png"), opacity=0.95)
-        hero.add_widget(picture)
-        hello = Label(
-            text="[i]I'm listening.[/i]",
-            markup=True,
-            color=DIM,
-            size_hint_y=None,
-            height=dp(22),
-        )
-        hero.add_widget(hello)
-        self.log.add_widget(hero)
-        self._hero = hero
-        breathe = Animation(opacity=0.72, duration=1.9) + Animation(
-            opacity=1.0, duration=1.9
+        """Start the orb breathing; it stays on screen like in the reference."""
+        self._breathe_hero()
+
+    # ------------------------------------------------------------- her face
+    def _face_pieces(self):
+        """The orb, and the small sparkle in the header."""
+        return [w for w in (getattr(self, "_avatar", None), getattr(self, "_hero_pic", None)) if w is not None]
+
+    def _stop_face(self) -> None:
+        for widget in self._face_pieces():
+            Animation.cancel_all(widget)
+        orb = self._hero_pic
+        orb.size = (dp(190), dp(190))
+        orb.opacity = 1.0
+        self._avatar.opacity = 1.0
+
+    def start_talking(self) -> None:
+        """The orb swells and flickers in time with her words."""
+        self._stop_face()
+        self.set_status("speaking")
+        orb = self._hero_pic
+        big, small = dp(214), dp(196)
+        beat = Animation(size=(big, big), opacity=1.0, duration=0.16, t="out_quad")
+        beat += Animation(size=(small, small), opacity=0.82, duration=0.2, t="in_out_quad")
+        beat += Animation(size=(dp(206), dp(206)), opacity=1.0, duration=0.13, t="out_quad")
+        beat += Animation(size=(dp(192), dp(192)), opacity=0.78, duration=0.22, t="in_out_quad")
+        beat.repeat = True
+        beat.start(orb)
+        glint = Animation(opacity=0.4, duration=0.17) + Animation(opacity=1.0, duration=0.17)
+        glint.repeat = True
+        glint.start(self._avatar)
+
+    def start_listening_face(self) -> None:
+        """A slow, wide swell: she is listening, not talking."""
+        self._stop_face()
+        self.set_status("listening")
+        sway = Animation(size=(dp(206), dp(206)), duration=0.7, t="in_out_sine")
+        sway += Animation(size=(dp(186), dp(186)), duration=0.7, t="in_out_sine")
+        sway.repeat = True
+        sway.start(self._hero_pic)
+
+    def stop_face_motion(self) -> None:
+        self._stop_face()
+        self._breathe_hero()
+        if self.awaiting_key_state():
+            self.set_status("needs key")
+        elif self.busy:
+            self.set_status("thinking")
+        else:
+            self.set_status("Ready")
+
+    def awaiting_key_state(self) -> bool:
+        return bool(getattr(self, "awaiting_key", False))
+
+    def _breathe_hero(self) -> None:
+        orb = self._hero_pic
+        Animation.cancel_all(orb)
+        breathe = Animation(opacity=0.78, duration=2.0, t="in_out_sine") + Animation(
+            opacity=1.0, duration=2.0, t="in_out_sine"
         )
         breathe.repeat = True
-        breathe.start(picture)
+        breathe.start(orb)
+
+    def say_with_face(self, text: str) -> None:
+        """Speak, with her face moving for as long as the words take."""
+        if self.agent is None:
+            return
+        words = len(str(text).split())
+        rate = getattr(self.agent.voice.profile, "rate", 1.0) or 1.0
+        seconds = max(1.0, min(45.0, (words / 2.6) / rate))
+
+        def speak(*_):
+            self.start_talking()
+            try:
+                self.agent.voice.say(text)
+            finally:
+                Clock.schedule_once(lambda *_: self.stop_face_motion(), seconds)
+
+        Clock.schedule_once(speak, 0)
 
     def hide_face(self) -> None:
-        hero = getattr(self, "_hero", None)
-        if hero is not None and hero.parent is not None:
-            self.log.remove_widget(hero)
-        self._hero = None
+        """The orb stays put now, so there is nothing to hide."""
 
     def note(self, text: str, speaker: str = "note") -> None:
         self.log.add_widget(Bubble(text, speaker))
@@ -196,7 +409,17 @@ class ShackScreen(BoxLayout):
 
     def set_status(self, text: str) -> None:
         self.status = text
-        self.status_label.text = text
+        pretty = {
+            "Ready": ("SHACK Ready", "How can I help you today?"),
+            "thinking": ("Thinking...", "One moment."),
+            "listening": ("Listening...", "Go ahead, I am here."),
+            "speaking": ("Speaking...", ""),
+            "needs key": ("Needs a key", "Paste your Groq key below."),
+            "starting": ("Waking up...", ""),
+        }
+        top, bottom = pretty.get(text, ("SHACK Ready", "How can I help you today?"))
+        self.status_label.text = top
+        self.sub_label.text = bottom
 
     def boot(self) -> None:
         os.environ.setdefault("SHACK_DATA_DIR", data_dir())
@@ -224,11 +447,11 @@ class ShackScreen(BoxLayout):
         shack_ui.set_error_sink(lambda msg: self.note(msg, "note"))
 
         agent = self.agent
-        # speak on the UI thread, whatever thread asked for it
-        agent.say = lambda text: Clock.schedule_once(lambda *_: agent.voice.say(text), 0)
+        agent.say = self.say_with_face
         agent.start_reminder_watcher()
 
-        self.set_status(agent.brain.model.split("/")[-1])
+        self.set_status("Ready")
+        self._voice_btn.text = "Voice"
         name = agent.memory.get_fact("user_name")
         hour = time.localtime().tm_hour
         part = "morning" if hour < 12 else "afternoon" if hour < 18 else "evening"
@@ -240,14 +463,13 @@ class ShackScreen(BoxLayout):
             self.note("Tell me your name when you're ready, or just start asking.")
 
     def prompt_for_key(self) -> None:
-        self.note("I need a Groq API key to think. Paste it below and press Send.")
+        self.note("I need a Groq API key to think. Paste it below and press the sparkle.")
         self.note("Free key: https://console.groq.com/keys")
         self.set_status("needs key")
         self.awaiting_key = True
 
     # ------------------------------------------------------------------ chat
     def send(self) -> None:
-        self.hide_face()
         text = self.entry.text.strip()
         self.entry.text = ""
         if not text:
@@ -293,9 +515,18 @@ class ShackScreen(BoxLayout):
 
     def finish(self, answer: str) -> None:
         self.busy = False
-        self.set_status(self.agent.brain.model.split("/")[-1])
+        self.set_status("Ready")
         self.note(answer, "shack")
         self.agent.say(answer)
+
+    def sample_voice(self) -> None:
+        """Hear her voice without changing it. Rumi stays until /voice says otherwise."""
+        if self.agent is None:
+            self.note("Not ready yet.")
+            return
+        profile = self.agent.voice.profile
+        self.note(f"{profile.label}: {profile.blurb}. Say /voice for other voices.", "note")
+        self.say_with_face("Hi, it is me. This is how I sound.")
 
     def check_brain(self) -> None:
         """Ask Groq what is wrong, in words, instead of guessing."""
@@ -340,35 +571,21 @@ class ShackScreen(BoxLayout):
 
         threading.Thread(target=work, daemon=True).start()
 
-    def cycle_voice(self) -> None:
-        if self.agent is None:
-            self.note("Not ready yet.")
-            return
-        from shack import voices
-
-        order = voices.names()
-        current = self.agent.voice.profile.key
-        nxt = order[(order.index(current) + 1) % len(order)] if current in order else order[0]
-        message = self.agent.voice.set_profile(nxt)
-        self.note(message, "note")
-        self.agent.say(f"This is {self.agent.voice.profile.label}. How does this sound?")
-
     def listen(self) -> None:
-        self.hide_face()
         if self.agent is None:
             self.note("Not ready yet.")
             return
-        self.set_status("listening")
-        self.note("Listening… say what you need.")
+        self.start_listening_face()
+        self.note("Listening… say what you need.", "note")
 
         def work() -> None:
             heard = self.agent.voice._listen_android()  # noqa: SLF001
             def apply(*_):
-                self.set_status(self.agent.brain.model.split("/")[-1])
+                self.stop_face_motion()
                 if heard:
                     self.ask(heard)
                 else:
-                    self.note("I didn't catch that. Try again or type it.")
+                    self.note("I didn't catch that. Try again or type it.", "note")
             Clock.schedule_once(apply, 0)
 
         threading.Thread(target=work, daemon=True).start()

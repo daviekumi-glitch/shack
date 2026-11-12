@@ -2,6 +2,32 @@
 
 Every change, in plain language. Newest first.
 
+## 2.1.4 - the new look
+
+The whole screen is redesigned after the Aura reference you sent, with SHACK in place of the name.
+
+* Deep violet night background with soft, rounded glass-style panels.
+* Header: a lilac sparkle logo, "SHACK" in pink, and Voice and Mic on the right.
+* The orb is now a permanent centrepiece at the top, no longer scrolling away. Under
+  it the status reads "SHACK Ready / How can I help you today?" and changes to
+  Thinking, Listening or Speaking as she works.
+* Chat bubbles: yours on the right, hers on the left with a small sparkle beside
+  them. Short messages get short bubbles; long ones wrap.
+* A pill-shaped "Ask anything..." bar with a sparkle as the send button.
+* The orb animation from 2.1.3 carries over: it swells and flickers while she
+  speaks, slowly swells while she listens, and breathes at rest.
+
+## 2.1.3 - Rumi stays, and her face moves
+
+* Rumi is now permanent. Tapping Voice no longer cycles her to Nova or anything
+  else; the button just says hello in her current voice. Only /voice can change it,
+  and every restart brings Rumi back.
+* Her face moves while she talks: the orb in the header and the big orb on the home
+  screen pulse in time with each spoken line, dip while she is thinking, and swell
+  slowly while she is listening.
+* Speech length is estimated from the word count and her speaking rate, so the
+  movement lasts as long as the sentence does and then settles back to breathing.
+
 ## 2.1.2 - tell me why the brain is unreachable
 
 * The app now shows the actual reason a request failed in the chat, instead of a
