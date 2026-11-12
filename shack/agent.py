@@ -142,7 +142,8 @@ class ShackAgent:
                 message = self.brain.chat(messages, tools=specs)
             except BrainError as exc:
                 ui.error(str(exc))
-                return "I cannot reach my brain right now. Check the network or the API key."
+                reason = str(exc).strip() or exc.__class__.__name__
+                return f"I cannot reach my brain right now. {reason}"
 
             calls = message.get("tool_calls") or []
             if not calls:

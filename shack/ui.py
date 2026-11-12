@@ -59,7 +59,21 @@ def warn(text: str) -> None:
     print(tint(f"! {text}", "yellow"))
 
 
+_error_sink = None
+
+
+def set_error_sink(sink) -> None:
+    """Send errors somewhere visible. The Android app shows them in the chat."""
+    global _error_sink
+    _error_sink = sink
+
+
 def error(text: str) -> None:
+    if _error_sink is not None:
+        try:
+            _error_sink(text)
+        except Exception:  # noqa: BLE001 - a UI problem must not break the agent
+            pass
     print(tint(f"✗ {text}", "red"))
 
 

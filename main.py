@@ -64,6 +64,11 @@ def saved_key() -> str:
     return ""
 
 
+def clean_key(key: str) -> str:
+    """Keys arrive with stray spaces or a newline from a phone clipboard."""
+    return "".join(key.split())
+
+
 def save_key(key: str) -> None:
     path = os.path.join(data_dir(), ".env")
     lines = []
@@ -214,6 +219,10 @@ class ShackScreen(BoxLayout):
             self.prompt_for_key()
             return
 
+        from shack import ui as shack_ui
+
+        shack_ui.set_error_sink(lambda msg: self.note(msg, "note"))
+
         agent = self.agent
         # speak on the UI thread, whatever thread asked for it
         agent.say = lambda text: Clock.schedule_once(lambda *_: agent.voice.say(text), 0)
@@ -244,7 +253,15 @@ class ShackScreen(BoxLayout):
         if not text:
             return
         if getattr(self, "awaiting_key", False):
-            save_key(text)
+            key = clean_key(text)
+            if not key.startswith("gsk_"):
+                self.note(
+                    "That does not look like a Groq key. They start with gsk_. "
+                    "Copy the whole key from console.groq.com/keys and paste it here.",
+                    "note",
+                )
+                return
+            save_key(key)
             self.awaiting_key = False
             self.note("Key saved.", "note")
             self.boot()
@@ -279,6 +296,49 @@ class ShackScreen(BoxLayout):
         self.set_status(self.agent.brain.model.split("/")[-1])
         self.note(answer, "shack")
         self.agent.say(answer)
+
+    def check_brain(self) -> None:
+        """Ask Groq what is wrong, in words, instead of guessing."""
+        if self.agent is None:
+            self.note("Not ready yet.")
+            return
+        self.note("Checking the key and the connection...", "note")
+
+        def work() -> None:
+            from shack.brain import BASE_URL, _error_detail
+
+            brain = self.agent.brain
+            try:
+                resp = brain._session.get(
+                    f"{BASE_URL}/models", headers=brain._headers, timeout=20
+                )
+            except Exception as exc:  # noqa: BLE001 - report anything
+                msg = f"No connection to Groq: {exc.__class__.__name__}. Check mobile data or wifi."
+            else:
+                if resp.status_code == 200:
+                    try:
+                        ids = [m.get("id", "") for m in resp.json().get("data", [])]
+                    except ValueError:
+                        ids = []
+                    has_model = brain.model in ids
+                    msg = (
+                        f"Key works. {len(ids)} models available. "
+                        + (
+                            f"{brain.model} is ready."
+                            if has_model
+                            else f"{brain.model} is NOT on this account. Try /model llama-3.3-70b-versatile"
+                        )
+                    )
+                elif resp.status_code in (401, 403):
+                    msg = (
+                        "Groq rejected the key. It is wrong, expired, or from another "
+                        f"service. ({_error_detail(resp)})"
+                    )
+                else:
+                    msg = f"Groq answered {resp.status_code}: {_error_detail(resp)}"
+            Clock.schedule_once(lambda *_: self.note(msg, "note"), 0)
+
+        threading.Thread(target=work, daemon=True).start()
 
     def cycle_voice(self) -> None:
         if self.agent is None:
@@ -348,9 +408,11 @@ class ShackScreen(BoxLayout):
             self.note(voices.describe_all(), "note")
         elif cmd == "/key":
             self.prompt_for_key()
+        elif cmd == "/test":
+            self.check_brain()
         else:
             self.note(
-                "Commands: /facts /tasks /reminders /voice /voices /reset /key /exit"
+                "Commands: /test /key /facts /tasks /reminders /voice /voices /reset /exit"
             )
 
 

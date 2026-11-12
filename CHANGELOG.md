@@ -2,6 +2,17 @@
 
 Every change, in plain language. Newest first.
 
+## 2.1.2 - tell me why the brain is unreachable
+
+* The app now shows the actual reason a request failed in the chat, instead of a
+  generic "check the network or the API key".
+* New `/test` command checks the key and the connection to Groq and says plainly
+  what is wrong: bad key, no data connection, or a model missing from the account.
+* Keys are cleaned before saving, so a stray space or newline from a phone
+  clipboard no longer breaks them, and anything that does not start with `gsk_`
+  is refused with a clear message.
+* Errors from the agent now reach the screen instead of only the console.
+
 ## 2.1.1 - her face, and an APK that actually builds
 
 ### A face
