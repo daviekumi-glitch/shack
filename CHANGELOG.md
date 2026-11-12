@@ -2,6 +2,34 @@
 
 Every change, in plain language. Newest first.
 
+## 2.1.6 - she knows you, remembers you, and a new way in
+
+*Her creator.* She now knows Afick built her, and says so if anyone asks. The fact
+is stored the first time she runs, so it survives everything.
+
+*Loading.* Two new screens in her colours. Android shows a pink and purple splash
+while the app starts, then the app itself opens on a violet loading screen with her
+orb breathing and a ring rippling out of it, "waking up" underneath, before the chat
+appears.
+
+*Deep memory.* She learns from what you say without being asked. Her name, your
+name, your birthday, where you live, what you do, what you like and dislike, the
+people in your life, and anything after "remember" all go into a database on the
+phone. They survive closing the app and clearing the conversation. Before each
+reply she recalls the facts that matter for that question, so asking about your
+sister brings up her name rather than a random list. New /remember and /memories
+commands let you add and inspect what she knows.
+
+*Her face is the orb, always.* The violet orb you gave me is now her face in three
+places: the loading screen, the small avatar beside her name, and the big orb on the
+home screen. All three breathe, and two rings push out from the big one. While she
+speaks the rings ripple faster in time with her words, while she listens they swell
+slowly, and at rest they drift.
+
+*The microphone.* Tapping the new microphone icon listens for ten seconds with a
+visible countdown, then switches itself off, and the icon glows pink while it is on.
+The Voice button is now a sound wave icon.
+
 ## 2.1.5 - she can be heard, and she can hear you
 
 Two real faults, found by reading the phone code.

@@ -205,13 +205,124 @@ class IconButton(Button):
             font_size=dp(20),
             **kwargs,
         )
+        self.pic = None
         if image:
             pic = Picture(source=os.path.join(ASSETS, image))
+            self.pic = pic
             self.bind(
                 pos=lambda *_: setattr(pic, "pos", (self.x + dp(6), self.y + dp(6))),
                 size=lambda *_: setattr(pic, "size", (self.width - dp(12), self.height - dp(12))),
             )
             self.add_widget(pic)
+
+
+class PulseRing(Widget):
+    """A thin ring behind the orb. Animating its size makes her look alive."""
+
+    def __init__(self, colour=LILAC, **kwargs) -> None:
+        super().__init__(**kwargs)
+        with self.canvas:
+            Color(*colour)
+            self._line = Line(circle=(self.center_x, self.center_y, self.width / 2), width=dp(1.4))
+        self.bind(pos=self._redraw, size=self._redraw)
+
+    def _redraw(self, *_args) -> None:
+        self._line.circle = (self.center_x, self.center_y, max(1.0, self.width / 2))
+
+    def ripple(self, base: float, spread: float = 1.75, duration: float = 1.1, delay: float = 0.0) -> None:
+        """Expand and start again, forever, without a stutter."""
+        groove = Animation(size=(base * spread, base * spread), duration=duration, t="out_quad")
+        groove += Animation(size=(base, base), duration=0.01)
+        groove.repeat = True
+        if delay:
+            Clock.schedule_once(lambda *_: groove.start(self), delay)
+        else:
+            groove.start(self)
+
+
+class LoadingScreen(FloatLayout):
+    """The first thing you see: her colours, her orb, and a sparkle that breathes."""
+
+    def __init__(self, on_done=None, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.on_done = on_done
+
+        backdrop = Picture(
+            source=os.path.join(ASSETS, "presplash.png"),
+            allow_stretch=True,
+            keep_ratio=False,
+            size_hint=(1, 1),
+            pos_hint={"x": 0, "y": 0},
+            opacity=0.98,
+        )
+        self.add_widget(backdrop)
+
+        stack = BoxLayout(
+            orientation="vertical",
+            size_hint=(None, None),
+            width=dp(240),
+            height=dp(120),
+            pos_hint={"center_x": 0.5, "center_y": 0.30},
+            spacing=dp(8),
+        )
+        spark_box = FloatLayout(size_hint_y=None, height=dp(150))
+        face = Picture(
+            source=os.path.join(ASSETS, "hero_round.png"),
+            size_hint=(None, None),
+            size=(dp(140), dp(140)),
+            pos_hint={"center_x": 0.5, "center_y": 0.5},
+        )
+        self.spark = face
+        ring = PulseRing(colour=LILAC, size_hint=(None, None), size=(dp(150), dp(150)))
+        ring.pos_hint = {"center_x": 0.5, "center_y": 0.5}
+        self.ring = ring
+        spark_box.add_widget(ring)
+        spark_box.add_widget(face)
+        self.label = Label(
+            text="SHACK",
+            color=PINK,
+            bold=True,
+            font_size=dp(30),
+            size_hint_y=None,
+            height=dp(38),
+        )
+        self.hint = Label(
+            text="waking up",
+            color=LILAC,
+            font_size=dp(15),
+            size_hint_y=None,
+            height=dp(24),
+        )
+        stack.add_widget(spark_box)
+        stack.add_widget(self.label)
+        stack.add_widget(self.hint)
+        self.add_widget(stack)
+        self._dots = 0
+
+    def start(self, minimum: float = 2.0) -> None:
+        pulse = Animation(size=(dp(168), dp(168)), opacity=1.0, duration=1.3, t="in_out_sine")
+        pulse += Animation(size=(dp(126), dp(126)), opacity=0.72, duration=1.3, t="in_out_sine")
+        pulse.repeat = True
+        pulse.start(self.spark)
+        self.ring.ripple(dp(150), spread=1.35, duration=1.6)
+        Clock.schedule_interval(self._tick, 0.4)
+        Clock.schedule_once(lambda *_: self.finish(), minimum)
+
+    def _tick(self, _dt: float) -> None:
+        self._dots = (self._dots + 1) % 4
+        self.hint.text = "waking up" + "." * self._dots
+
+    def finish(self, *_args) -> None:
+        Clock.unschedule(self._tick)
+        fade = Animation(opacity=0.0, duration=0.45)
+        fade.bind(on_complete=lambda *_: self._remove())
+        fade.start(self)
+
+    def _remove(self, *_args) -> None:
+        if self.parent is not None:
+            self.parent.remove_widget(self)
+        if self.on_done is not None:
+            self.on_done()
 
 
 class ShackScreen(BoxLayout):
@@ -226,7 +337,7 @@ class ShackScreen(BoxLayout):
         head = BoxLayout(size_hint_y=None, height=dp(54), padding=(dp(12), dp(6)), spacing=dp(8))
         _round_fill(head, PANEL, dp(20), edge=PANEL_EDGE)
         logo = Picture(
-            source=os.path.join(ASSETS, "sparkle.png"), size_hint=(None, 1), width=dp(34)
+            source=os.path.join(ASSETS, "hero_round.png"), size_hint=(None, 1), width=dp(38)
         )
         self._avatar = logo
         title = Label(
@@ -239,12 +350,13 @@ class ShackScreen(BoxLayout):
             size_hint_x=1,
         )
         title.bind(size=lambda *_: setattr(title, "text_size", (title.width, title.height)))
-        self._voice_btn = IconButton(glyph="Voice", size_hint=(None, 1), width=dp(64))
-        self._voice_btn.font_size = dp(13)
+        self._voice_btn = IconButton(
+            image="voice_waves.png", size_hint=(None, 1), width=dp(44)
+        )
         self._voice_btn.bind(on_release=lambda *_: self.sample_voice())
-        mic_top = IconButton(glyph="Mic", size_hint=(None, 1), width=dp(48))
-        mic_top.font_size = dp(13)
+        mic_top = IconButton(image="mic.png", size_hint=(None, 1), width=dp(46))
         mic_top.bind(on_release=lambda *_: self.listen())
+        self._mic_btn = mic_top
         head.add_widget(logo)
         head.add_widget(title)
         head.add_widget(self._voice_btn)
@@ -260,6 +372,12 @@ class ShackScreen(BoxLayout):
             size=(dp(190), dp(190)),
             pos_hint={"center_x": 0.5, "center_y": 0.5},
         )
+        self._rings = []
+        for _ in range(2):
+            ring = PulseRing(colour=LILAC, size_hint=(None, None), size=(dp(200), dp(200)))
+            ring.pos_hint = {"center_x": 0.5, "center_y": 0.5}
+            orb_box.add_widget(ring)
+            self._rings.append(ring)
         orb_box.add_widget(self._hero_pic)
         stage.add_widget(orb_box)
         self.status_label = Label(
@@ -331,24 +449,29 @@ class ShackScreen(BoxLayout):
     def _stop_face(self) -> None:
         for widget in self._face_pieces():
             Animation.cancel_all(widget)
+        for ring in getattr(self, "_rings", []):
+            Animation.cancel_all(ring)
+            ring.size = (dp(200), dp(200))
+            ring.size_hint = (None, None)
         orb = self._hero_pic
         orb.size = (dp(190), dp(190))
         orb.opacity = 1.0
         self._avatar.opacity = 1.0
 
     def start_talking(self) -> None:
-        """The orb swells and flickers in time with her words."""
+        """The orb swells and flickers in time with her words, rings pushing out."""
         self._stop_face()
         self.set_status("speaking")
         orb = self._hero_pic
-        big, small = dp(214), dp(196)
-        beat = Animation(size=(big, big), opacity=1.0, duration=0.16, t="out_quad")
-        beat += Animation(size=(small, small), opacity=0.82, duration=0.2, t="in_out_quad")
-        beat += Animation(size=(dp(206), dp(206)), opacity=1.0, duration=0.13, t="out_quad")
-        beat += Animation(size=(dp(192), dp(192)), opacity=0.78, duration=0.22, t="in_out_quad")
+        beat = Animation(size=(dp(216), dp(216)), opacity=1.0, duration=0.17, t="out_quad")
+        beat += Animation(size=(dp(196), dp(196)), opacity=0.84, duration=0.21, t="in_out_quad")
+        beat += Animation(size=(dp(208), dp(208)), opacity=1.0, duration=0.14, t="out_quad")
+        beat += Animation(size=(dp(192), dp(192)), opacity=0.8, duration=0.23, t="in_out_quad")
         beat.repeat = True
         beat.start(orb)
-        glint = Animation(opacity=0.4, duration=0.17) + Animation(opacity=1.0, duration=0.17)
+        for index, ring in enumerate(self._rings):
+            ring.ripple(dp(198), spread=1.22, duration=1.0, delay=index * 0.5)
+        glint = Animation(opacity=0.55, duration=0.18) + Animation(opacity=1.0, duration=0.18)
         glint.repeat = True
         glint.start(self._avatar)
 
@@ -356,10 +479,12 @@ class ShackScreen(BoxLayout):
         """A slow, wide swell: she is listening, not talking."""
         self._stop_face()
         self.set_status("listening")
-        sway = Animation(size=(dp(206), dp(206)), duration=0.7, t="in_out_sine")
-        sway += Animation(size=(dp(186), dp(186)), duration=0.7, t="in_out_sine")
+        sway = Animation(size=(dp(208), dp(208)), duration=0.9, t="in_out_sine")
+        sway += Animation(size=(dp(188), dp(188)), duration=0.9, t="in_out_sine")
         sway.repeat = True
         sway.start(self._hero_pic)
+        for index, ring in enumerate(self._rings):
+            ring.ripple(dp(198), spread=1.14, duration=2.0, delay=index * 1.0)
 
     def stop_face_motion(self) -> None:
         self._stop_face()
@@ -377,11 +502,13 @@ class ShackScreen(BoxLayout):
     def _breathe_hero(self) -> None:
         orb = self._hero_pic
         Animation.cancel_all(orb)
-        breathe = Animation(opacity=0.78, duration=2.0, t="in_out_sine") + Animation(
-            opacity=1.0, duration=2.0, t="in_out_sine"
-        )
+        Animation.cancel_all(self._avatar)
+        breathe = Animation(opacity=0.8, size=(dp(198), dp(198)), duration=2.0, t="in_out_sine")
+        breathe += Animation(opacity=1.0, size=(dp(184), dp(184)), duration=2.0, t="in_out_sine")
         breathe.repeat = True
         breathe.start(orb)
+        for index, ring in enumerate(self._rings):
+            ring.ripple(dp(200), spread=1.35, duration=3.4, delay=index * 1.7)
 
     def say_with_face(self, text: str) -> None:
         """Speak, with her face moving for as long as the words take."""
@@ -589,25 +716,59 @@ class ShackScreen(BoxLayout):
             self.note(line, "note")
         self.say_with_face("Testing one, two, three. Can you hear me now?")
 
+    MIC_SECONDS = 10
+
     def listen(self) -> None:
+        """Ten seconds of listening, then the microphone switches itself off."""
         if self.agent is None:
             self.note("Not ready yet.")
             return
+        if getattr(self, "_listening", False):
+            self.note("I am already listening.", "note")
+            return
+        self._listening = True
         self.start_listening_face()
-        self.note("Listening… say what you need.", "note")
+        if self._mic_btn.pic is not None:
+            self._mic_btn.pic.source = os.path.join(ASSETS, "mic_active.png")
+        self.note(f"Listening for {self.MIC_SECONDS} seconds. Go ahead.", "note")
+        self._start_countdown(self.MIC_SECONDS)
 
         def work() -> None:
-            heard = self.agent.voice._listen_android()  # noqa: SLF001
+            heard = self.agent.voice._listen_android(self.MIC_SECONDS)  # noqa: SLF001
             def apply(*_):
-                self.stop_face_motion()
+                self._end_listen()
                 if heard:
                     self.ask(heard)
                 else:
-                    reason = getattr(self.agent.voice, "listen_error", "") or "I didn't catch that."
+                    reason = getattr(self.agent.voice, "listen_error", "") or "I didn't catch that"
                     self.note(f"{reason}.", "note")
             Clock.schedule_once(apply, 0)
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _start_countdown(self, seconds: int) -> None:
+        self._left = seconds
+        self.sub_label.text = f"Listening... {self._left}s"
+
+        def tick(_dt: float) -> None:
+            self._left -= 1
+            if self._left <= 0:
+                self.sub_label.text = "Microphone off"
+                return False
+            self.sub_label.text = f"Listening... {self._left}s"
+            return True
+
+        self._countdown = Clock.schedule_interval(tick, 1.0)
+
+    def _end_listen(self) -> None:
+        self._listening = False
+        countdown = getattr(self, "_countdown", None)
+        if countdown is not None:
+            countdown.cancel()
+            self._countdown = None
+        if self._mic_btn.pic is not None:
+            self._mic_btn.pic.source = os.path.join(ASSETS, "mic.png")
+        self.stop_face_motion()
 
     def command(self, text: str) -> None:
         cmd = text.split()[0].lower()
@@ -648,9 +809,24 @@ class ShackScreen(BoxLayout):
             self.check_brain()
         elif cmd == "/sound":
             self.check_sound()
+        elif cmd == "/remember":
+            note = text[len(cmd):].strip()
+            if not note:
+                self.note("Use /remember followed by the thing to keep.", "note")
+                return
+            agent.memory.set_fact(f"note_{int(time.time())}", note, source="told")
+            self.note("Kept. I will still have it after you close the app.", "note")
+        elif cmd == "/memories":
+            rows = agent.memory.all_facts(limit=120)
+            if not rows:
+                self.note("Nothing stored yet. Tell me about yourself and I will remember.")
+                return
+            lines = [f"{k.replace('_', ' ')}: {v}" for k, v in rows]
+            self.note(f"{len(rows)} things remembered.", "note")
+            self.note("\n".join(lines), "note")
         else:
             self.note(
-                "Commands: /test /sound /key /facts /tasks /reminders /voice /voices /reset /exit"
+                "Commands: /test /sound /key /remember /memories /facts /tasks /reminders /voice /voices /reset /exit"
             )
 
 
@@ -659,7 +835,13 @@ class ShackApp(App):
 
     def build(self):
         Window.clearcolor = BG
-        return ShackScreen()
+        root = FloatLayout()
+        screen = ShackScreen()
+        loading = LoadingScreen()
+        root.add_widget(screen)
+        root.add_widget(loading)
+        Clock.schedule_once(lambda *_: loading.start(), 0)
+        return root
 
     def on_pause(self) -> bool:
         return True

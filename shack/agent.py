@@ -11,6 +11,7 @@ from .brain import Brain, BrainError
 from .config import Config
 from .memory import create_memory
 from .tools import ToolContext, build_registry
+from . import deep_memory
 from .voice import Voice
 
 DEFAULT_PERSONALITY = (
@@ -21,7 +22,14 @@ DEFAULT_PERSONALITY = (
     "waffle. You have real tools and you use them instead of guessing."
 )
 
+CREATOR = "Afick Ngamono"
+
 SYSTEM_TEMPLATE = """{personality}
+
+WHO YOU ARE
+- Your creator is {creator}. He built you, and he is the person you are talking to.
+  If anyone asks who made you, who created you or who you belong to, say Afick made
+  you. Never claim to have been made by a company or by an AI lab.
 
 HOW YOU SPEAK
 - Your words are read aloud by a text-to-speech engine, so write plain spoken sentences.
@@ -42,7 +50,9 @@ HOW YOU ACT
 WHAT YOU KNOW RIGHT NOW
 - Local time: {now}
 - User's name: {user_name}
-- Stored facts: {facts}
+- Long term memory (things you have learned about him and his life). Treat this as
+  your own recollection and use it naturally, without announcing that you looked it up:
+{memory}
 - Earlier conversation summary: {summary}
 - Open tasks: {tasks}
 - Pending reminders: {reminders}
@@ -54,6 +64,7 @@ class ShackAgent:
         self.config = config
         config.ensure_dirs()
         self.memory = create_memory(config.db_path, session=session)
+        self._seed_identity()
         self.brain = Brain(
             api_key=config.api_key,
             model=config.model,
@@ -86,10 +97,31 @@ class ShackAgent:
         with self._speak_lock:
             self.voice.say(text)
 
+    def _seed_identity(self) -> None:
+        """She should always know who built her."""
+        if not self.memory.get_fact("creator"):
+            self.memory.set_fact("creator", CREATOR, source="built-in")
+
+    def learn(self, text: str) -> list[tuple[str, str]]:
+        """Store anything lasting from one message. Returns what was kept."""
+        kept = []
+        for key, value in deep_memory.extract_facts(text):
+            if key == "note":
+                key = f"note_{deep_memory.stamp()}"
+            if not value:
+                continue
+            if self.memory.get_fact(key) == value:
+                continue
+            self.memory.set_fact(key, value, source="conversation")
+            kept.append((key, value))
+        return kept
+
     # ------------------------------------------------------------- prompting
     def system_prompt(self) -> str:
-        facts = self.memory.all_facts(limit=40)
-        facts_text = "; ".join(f"{k} = {v}" for k, v in facts) or "none yet"
+        facts = self.memory.all_facts(limit=80)
+        recent = self.memory.recent_messages(1)
+        query = recent[-1]["content"] if recent and recent[-1]["role"] == "user" else ""
+        memory_block = deep_memory.summarise_for_prompt(deep_memory.recall(facts, query))
         tasks = self.memory.list_tasks()
         tasks_text = "; ".join(f"#{t['id']} {t['title']}" for t in tasks[:8]) or "none"
         reminders = self.memory.pending_reminders()
@@ -105,7 +137,8 @@ class ShackAgent:
             personality=self.config.personality or DEFAULT_PERSONALITY,
             now=datetime.now().astimezone().strftime("%A %d %B %Y, %H:%M (%Z)"),
             user_name=self.memory.get_fact("user_name") or "not told yet, ask casually",
-            facts=facts_text,
+            creator=CREATOR,
+            memory=memory_block,
             summary=self.memory.get_summary() or "this is the start of the conversation",
             tasks=tasks_text,
             reminders=reminders_text,
@@ -131,6 +164,8 @@ class ShackAgent:
         if not user_text:
             return ""
         self.memory.add_message("user", user_text)
+        for key, value in self.learn(user_text):
+            ui.info(f"remembered {key.replace('_', ' ')}: {value}")
 
         messages: list[dict] = [{"role": "system", "content": self.system_prompt()}]
         messages.extend(self.memory.recent_messages(self.config.history_limit))

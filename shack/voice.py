@@ -288,7 +288,7 @@ class Voice:
         except Exception as exc:  # noqa: BLE001
             return f"error ({exc.__class__.__name__})"
 
-    def _listen_android(self, seconds: int = 15) -> str:
+    def _listen_android(self, seconds: int = 10) -> str:
         """One shot of Android's own recogniser.
 
         Two things matter here. The recogniser returns up to a thousand candidate
