@@ -12,6 +12,7 @@ plyer, then to printing.
 from __future__ import annotations
 
 import socket
+import threading
 import time
 
 from .voices import VoiceProfile
@@ -46,6 +47,7 @@ class AndroidSpeaker:
         self.network_ok = True
         self.needs_network_voice = False
         self.last_error = ""
+        self._proven = False
         self._init()
 
     # ------------------------------------------------------------------ setup
@@ -76,6 +78,32 @@ class AndroidSpeaker:
             def onInit(self, status: int) -> None:
                 speaker._ready = status == 0
 
+        self._started = False
+        self._finished = False
+        try:
+            from jnius import PythonJavaClass, java_method
+
+            class _Progress(PythonJavaClass):
+                __javainterfaces__ = ["android/speech/tts/UtteranceProgressListener"]
+                __javacontext__ = "app"
+
+                @java_method("(Ljava/lang/String;)V")
+                def onStart(self, utterance_id: str) -> None:
+                    speaker._started = True
+
+                @java_method("(Ljava/lang/String;)V")
+                def onDone(self, utterance_id: str) -> None:
+                    speaker._finished = True
+
+                @java_method("(Ljava/lang/String;I)V")
+                def onError(self, utterance_id: str, code: int) -> None:
+                    speaker.last_error = f"speech engine error {code}"
+
+            speaker = self
+            self._progress = _Progress()
+        except Exception:  # noqa: BLE001
+            self._progress = None
+
         try:
             activity = autoclass("org.kivy.android.PythonActivity").mActivity
             context = cast("android.content.Context", activity)
@@ -86,11 +114,18 @@ class AndroidSpeaker:
             self._tts = None
             return
 
-        deadline = time.time() + 5
+        deadline = time.time() + 15
         while time.time() < deadline and not self._ready:
-            time.sleep(0.1)
+            time.sleep(0.15)
         if not self._ready or self._tts is None:
+            self.last_error = "the phone's speech engine did not start within 15 seconds"
             return
+
+        if self._progress is not None:
+            try:
+                self._tts.setOnUtteranceProgressListener(self._progress)
+            except Exception:  # noqa: BLE001
+                self._progress = None
 
         try:
             self._route_to_speaker()
@@ -98,8 +133,18 @@ class AndroidSpeaker:
             self._tts.setPitch(float(self.profile.pitch))
             self._tts.setSpeechRate(float(self.profile.rate))
             self.ok = True
+            threading.Thread(target=self._first_sound_test, daemon=True).start()
         except Exception:  # noqa: BLE001
             self.ok = False
+
+    def _first_sound_test(self) -> None:
+        """Find a voice that really speaks, before you ask her anything."""
+        try:
+            if self.prove_audio():
+                self._proven = True
+                _log(f"audio confirmed with voice {self.voice_name}")
+        except Exception:  # noqa: BLE001
+            pass
 
     def _route_to_speaker(self) -> None:
         """Without this some phones play her into nothing at all."""
@@ -200,6 +245,9 @@ class AndroidSpeaker:
             params = Bundle()
             params.putInt(text_to_speech.Engine.KEY_PARAM_STREAM, STREAM_MUSIC)
             params.putFloat(text_to_speech.Engine.KEY_PARAM_VOLUME, 1.0)
+            if self._progress is not None and not self._proven:
+                if self.prove_audio():
+                    self._proven = True
             for index, chunk in enumerate(_chunks(text, _CHUNK)):
                 queue = text_to_speech.QUEUE_FLUSH if index == 0 else text_to_speech.QUEUE_ADD
                 self._tts.speak(
@@ -209,6 +257,63 @@ class AndroidSpeaker:
         except Exception as exc:  # noqa: BLE001
             self.last_error = f"speaking failed ({exc.__class__.__name__})"
             return False
+
+    def _ranked_voices(self) -> list:
+        try:
+            voices = list(self._tts.getVoices() or [])
+        except Exception:  # noqa: BLE001
+            return []
+        online = self.network_up()
+        self.network_ok = online
+        scored = []
+        for voice in voices:
+            try:
+                weight = self._score(voice, online)
+            except Exception:  # noqa: BLE001
+                continue
+            if weight > 0:
+                scored.append((weight, voice))
+        scored.sort(key=lambda row: -row[0])
+        return [voice for _, voice in scored]
+
+    def prove_audio(self, candidates: int = 4) -> bool:
+        from jnius import autoclass
+        """Try voices until one actually starts speaking.
+
+        A voice can be listed, be selectable, and still be silent when its data was
+        never downloaded. The only honest test is to speak and watch for onStart.
+        """
+        if not self.ok or self._tts is None:
+            return False
+        if self._progress is None:
+            return True  # cannot verify, assume the default voice works
+        for voice in self._ranked_voices()[:candidates]:
+            try:
+                self._tts.setVoice(voice)
+                self.voice_name = str(voice.getName())
+                self.needs_network_voice = bool(voice.isNetworkConnectionRequired())
+            except Exception:  # noqa: BLE001
+                continue
+            self._started = False
+            try:
+                self._tts.stop()
+                Bundle = autoclass("android.os.Bundle")
+                quiet = Bundle()
+                quiet.putFloat(
+                    autoclass("android.speech.tts.TextToSpeech").Engine.KEY_PARAM_VOLUME, 0.0
+                )
+                self._tts.speak("a", 0, quiet, f"probe-{int(time.time() * 1000)}")
+            except Exception:  # noqa: BLE001
+                continue
+            deadline = time.time() + 2.5
+            while time.time() < deadline:
+                if self._started:
+                    self.last_error = ""
+                    self._tts.stop()
+                    return True
+                time.sleep(0.1)
+        self.last_error = "no voice on this phone produced sound"
+        return False
 
     def diagnose(self) -> str:
         """One line a person can act on."""

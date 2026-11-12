@@ -52,6 +52,16 @@ def load_dotenv(path: Path) -> None:
             os.environ[key] = value
 
 
+def _builtin_key() -> str:
+    """A key compiled into the APK, so the app works the moment it is installed."""
+    try:
+        from . import builtin_key
+
+        return (builtin_key.get() or "").strip()
+    except Exception:  # noqa: BLE001 - older build without the module
+        return ""
+
+
 @dataclass
 class Config:
     api_key: str = ""
@@ -92,6 +102,7 @@ class Config:
             os.environ.get("SHACK_API_KEY")
             or os.environ.get("GROQ_KEY")
             or os.environ.get("GROQ_API_KEY")
+            or _builtin_key()
             or ""
         ).strip()
 

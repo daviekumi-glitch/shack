@@ -12,3 +12,6 @@ venv/
 bin/
 *.apk
 assets/*.pyc
+
+# generated at build time, carries the API key
+shack/builtin_key.py

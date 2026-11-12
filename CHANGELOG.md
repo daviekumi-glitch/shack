@@ -2,6 +2,24 @@
 
 Every change, in plain language. Newest first.
 
+## 2.1.7 - sound that proves itself, and better manners
+
+*Sound.* A voice can be listed by Android, be selectable, and still make no noise when
+its speech data was never downloaded. Guessing was not enough, so now she tests. At
+startup she walks down a ranked list of voices, silently speaks one syllable into each,
+and watches for Android's "speech started" callback. The first voice that answers is
+kept. If the engine has not been proven yet when you ask her something, she proves it
+first, then talks. The engine is also given fifteen seconds to start instead of five,
+because Google's engine is slow on a cold phone and used to give up silently.
+
+*Manners.* She used to answer "Afick made you" when asked who created her, which is
+the wrong person. She now answers in the first person about herself: "Afick made me."
+
+*No key to type.* Builds can now carry a working key, baked in at build time from a
+private value that never enters the repository. A fresh install then works the moment
+it opens, and /key still overrides it. Without that value baked in, the app asks for a
+key exactly as before.
+
 ## 2.1.6 - she knows you, remembers you, and a new way in
 
 *Her creator.* She now knows Afick built her, and says so if anyone asks. The fact
