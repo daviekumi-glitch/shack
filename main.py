@@ -13,6 +13,7 @@ import time
 
 os.environ.setdefault("KIVY_NO_ARGS", "1")
 
+from kivy.animation import Animation
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
@@ -20,12 +21,15 @@ from kivy.metrics import dp
 from kivy.properties import StringProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
+from kivy.uix.image import Image as Picture
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from kivy.utils import platform
 
 Window.softinput_mode = "below_target"
+
+ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 
 CYAN = (0.35, 0.85, 0.95, 1)
 DIM = (0.62, 0.66, 0.72, 1)
@@ -105,7 +109,11 @@ class ShackScreen(BoxLayout):
         self.agent = None
         self.busy = False
 
-        head = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
+        head = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(6))
+        face = Picture(
+            source=os.path.join(ASSETS, "avatar.png"), size_hint_x=None, width=dp(34)
+        )
+        head.add_widget(face)
         title = Label(
             text="[b]SHACK[/b]", markup=True, color=CYAN, halign="left", valign="middle"
         )
@@ -150,6 +158,33 @@ class ShackScreen(BoxLayout):
     def on_kv_post(self, *_args) -> None:
         Clock.schedule_once(lambda *_: self.boot(), 0.2)
 
+    def show_face(self) -> None:
+        """The hero avatar, breathing slowly until the first message."""
+        hero = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(230), spacing=dp(4))
+        picture = Picture(source=os.path.join(ASSETS, "hero.png"), opacity=0.95)
+        hero.add_widget(picture)
+        hello = Label(
+            text="[i]I'm listening.[/i]",
+            markup=True,
+            color=DIM,
+            size_hint_y=None,
+            height=dp(22),
+        )
+        hero.add_widget(hello)
+        self.log.add_widget(hero)
+        self._hero = hero
+        breathe = Animation(opacity=0.72, duration=1.9) + Animation(
+            opacity=1.0, duration=1.9
+        )
+        breathe.repeat = True
+        breathe.start(picture)
+
+    def hide_face(self) -> None:
+        hero = getattr(self, "_hero", None)
+        if hero is not None and hero.parent is not None:
+            self.log.remove_widget(hero)
+        self._hero = None
+
     def note(self, text: str, speaker: str = "note") -> None:
         self.log.add_widget(Bubble(text, speaker))
         Clock.schedule_once(lambda *_: setattr(self.scroll, "scroll_y", 0), 0.05)
@@ -191,6 +226,7 @@ class ShackScreen(BoxLayout):
         greeting = f"Good {part}{', ' + name if name else ''}. SHACK online."
         agent.say(greeting)
         self.note(greeting, "shack")
+        self.show_face()
         if not name:
             self.note("Tell me your name when you're ready, or just start asking.")
 
@@ -202,6 +238,7 @@ class ShackScreen(BoxLayout):
 
     # ------------------------------------------------------------------ chat
     def send(self) -> None:
+        self.hide_face()
         text = self.entry.text.strip()
         self.entry.text = ""
         if not text:
@@ -257,6 +294,7 @@ class ShackScreen(BoxLayout):
         self.agent.say(f"This is {self.agent.voice.profile.label}. How does this sound?")
 
     def listen(self) -> None:
+        self.hide_face()
         if self.agent is None:
             self.note("Not ready yet.")
             return

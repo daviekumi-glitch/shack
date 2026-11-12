@@ -2,6 +2,24 @@
 
 Every change, in plain language. Newest first.
 
+## 2.1.1 - her face, and an APK that actually builds
+
+### A face
+
+New glowing violet orb: launcher icon, header avatar, and a larger breathing copy that greets you on the home screen until you send your first message.
+
+### The APK builds now
+
+Three separate build failures, all fixed:
+
+setuptools crash: python-for-android's bundled setuptools 51 died while byte-compiling (byte_compile() got an unexpected keyword argument 'dry_run'). recipes/setuptools/ overrides that recipe with an empty one, since the app does not need setuptools at runtime.
+
+Artifact keys broke buildozer: android.debug_artifact and android.release_artifact were passed to the toolchain as a command (invalid choice: 'shack-2.1.1-debug'). Removed; buildozer names the file itself.
+
+Stale half-built kivy produced missing .c errors. A clean kivy build resolves it.
+
+Toolchain pinned to python-for-android v2024.01.21 (Python 3.11) and NDK 25b.
+
 ## 2.1.0 - a voice you want to talk to
 
 ### Voice profiles

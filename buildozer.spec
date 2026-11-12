@@ -13,10 +13,10 @@ source.include_exts = py,png,jpg,kv,atlas,json,txt,env
 source.exclude_dirs = tests,legacy,bin,.git,.github,.buildozer,__pycache__,shack.egg-info
 source.exclude_patterns = .env,*.db,*.db-journal
 
-version = 2.1.0
+version = 2.1.1
 
 # requests pulls in urllib3, chardet and idna itself, but p4a wants them named.
-requirements = python3,kivy,requests,urllib3,chardet,certifi,idna,plyer
+requirements = python3,kivy,requests,urllib3,certifi,idna,charset-normalizer,plyer
 
 icon.filename = %(source.dir)s/assets/icon.png
 
@@ -36,13 +36,12 @@ android.sdk_path = /opt/android-sdk
 android.ndk_path = /opt/android-sdk/ndk/25.1.8937393
 
 # The app has no launcher icon set per density; Kivy scales the one above.
-android.release_artifact = shack-2.1.0
-android.debug_artifact = shack-2.1.0-debug
 
 # Python for Android. v2024.01.21 ships Python 3.11, which is the newest
 # release where requests and its dependencies have ready built wheels. The
 # current master builds Python 3.14 and fails on those wheels.
 p4a.branch = v2024.01.21
+p4a.local_recipes = %(source.dir)s/recipes
 
 [buildozer]
 
