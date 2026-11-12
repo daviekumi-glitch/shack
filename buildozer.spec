@@ -13,7 +13,7 @@ source.include_exts = py,png,jpg,kv,atlas,json,txt,env
 source.exclude_dirs = tests,legacy,bin,.git,.github,.buildozer,__pycache__,shack.egg-info
 source.exclude_patterns = .env,*.db,*.db-journal
 
-version = 2.1.7
+version = 2.1.8
 
 # requests pulls in urllib3, chardet and idna itself, but p4a wants them named.
 requirements = python3,kivy,requests,urllib3,certifi,idna,charset-normalizer,plyer

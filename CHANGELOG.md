@@ -2,6 +2,21 @@
 
 Every change, in plain language. Newest first.
 
+## 2.1.8 - a second way to speak, for phones that refuse to
+
+Your phone's speech engine will not start for this app at all, which is why the Voice
+line read "silent" and every attempt to make her talk did nothing. Guessing at voices
+was pointless, so she now has a second voice that does not touch that engine.
+
+The reply is turned into a small MP3 by downloading it from a public voice endpoint,
+cached on the phone so a repeated sentence is instant, and played through Android's
+own media player. Media playback and speech synthesis are separate subsystems on
+Android, so the thing that is broken cannot break this. The online voice is only used
+when the on-device engine fails, and the microphone is untouched.
+
+The Voice line now also states the reason the device engine gave, in brackets, so the
+cause is visible on the phone instead of hidden in a log.
+
 ## 2.1.7 - sound that proves itself, and better manners
 
 *Sound.* A voice can be listed by Android, be selectable, and still make no noise when

@@ -83,13 +83,22 @@ class Voice:
 
         self._android = None
         self._android_tts = None
+        self._http = None
+        self.android_error = ""
         self.speaker: tuple[str, str] | None = None
 
         self._android = self._make_android()
-        if self._android is not None:
+        healthy = self._android is not None and getattr(self._android, "ok", False)
+        if healthy:
             self.speaker = ("android", "android")
         else:
             self.speaker = self._detect_speaker()
+            if self.speaker is None and self._inside_android():
+                # plyer talks to the very engine that just refused to start, so the
+                # online voice goes first when the phone is the problem.
+                self._http = self._make_http()
+                if self._http is not None:
+                    self.speaker = ("http", "online")
             if self.speaker is None:
                 facade = _plyer("tts")
                 if facade is not None:
@@ -107,7 +116,29 @@ class Voice:
             from . import tts_android
         except Exception:  # noqa: BLE001
             return None
-        return tts_android.make(self.profile)
+        speaker = tts_android.make(self.profile)
+        if speaker is None or not getattr(speaker, "ok", False):
+            self.android_error = tts_android.last_error()
+        return speaker
+
+    def _make_http(self):
+        """The online voice, for phones whose own engine refuses to speak."""
+        try:
+            from . import tts_http
+        except Exception:  # noqa: BLE001
+            return None
+        return tts_http.make(self.config_dir() / "cache")
+
+    @staticmethod
+    def _inside_android() -> bool:
+        if any(key.startswith("ANDROID_") for key in os.environ):
+            return True
+        try:
+            import importlib.util
+
+            return importlib.util.find_spec("jnius") is not None
+        except Exception:  # noqa: BLE001
+            return False
 
     @staticmethod
     def _detect_speaker() -> tuple[str, str] | None:
@@ -127,13 +158,21 @@ class Voice:
 
     listen_error = ""
 
+    def config_dir(self):
+        from .config import Config
+
+        return Config.load().data_dir
+
     def describe(self) -> str:
         where = {
             "android": "Android",
             "termux-tts-speak": "Termux",
             "plyer-tts": "plyer",
+            "http": "online voice",
         }.get(self.speaker[0] if self.speaker else "", self.speaker[0] if self.speaker else "silent")
         line = f"{self.profile.label} · {self.profile.blurb} · {where}"
+        if self.android_error and where != "Android":
+            line += f" (device engine: {self.android_error[:90]})"
         if getattr(self._android, "voice_name", ""):
             line += f" · {self._android.voice_name}"
         return line
@@ -157,9 +196,18 @@ class Voice:
         name, path = self.speaker
 
         if name == "android":
-            if not self._android.say(text):
-                self.speaker = self._detect_speaker()
+            if self._android.say(text):
+                return
+            self.android_error = getattr(self._android, "last_error", "") or "it produced no sound"
+            self._http = self._http or self._make_http()
+            if self._http is not None and self._http.say(text):
+                self.speaker = ("http", "online")
             return
+
+        if name == "http":
+            if self._http is not None and self._http.say(text):
+                return
+            self.speaker = self._detect_speaker()
 
         if name == "plyer-tts":
             for chunk in pace(text):
@@ -173,7 +221,11 @@ class Voice:
 
         for sentence in pace(text):
             if not self._run(path, name, sentence):
-                self.speaker = None
+                self._http = self._http or self._make_http()
+                if self._http is not None and self._http.say(text):
+                    self.speaker = ("http", "online")
+                else:
+                    self.speaker = None
                 return
             time.sleep(0.08 if name != "termux-tts-speak" else 0.0)
 
@@ -239,6 +291,8 @@ class Voice:
     def stop(self) -> None:
         if self._android is not None:
             self._android.stop()
+        if self._http is not None:
+            self._http.stop()
 
     # ---------------------------------------------------------------- listen
     def listen(self, prompt_label: str = "you") -> str:

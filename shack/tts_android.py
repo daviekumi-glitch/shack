@@ -358,13 +358,26 @@ class AndroidSpeaker:
         self.ok = False
 
 
+LAST_ERROR = ""
+
+
 def make(profile: VoiceProfile) -> AndroidSpeaker | None:
     """Return a working speaker, or None when this isn't an Android app."""
+    global LAST_ERROR
+    LAST_ERROR = ""
     try:
         speaker = AndroidSpeaker(profile)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        LAST_ERROR = f"{exc.__class__.__name__}: {exc}"[:220]
         return None
-    return speaker if speaker.ok else None
+    if speaker.ok:
+        return speaker
+    LAST_ERROR = (speaker.last_error or "the speech engine would not start")[:220]
+    return speaker  # report it, let the caller decide
+
+
+def last_error() -> str:
+    return LAST_ERROR
 
 
 def _chunks(text: str, size: int) -> list[str]:
