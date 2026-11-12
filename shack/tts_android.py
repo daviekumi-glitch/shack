@@ -11,11 +11,17 @@ plyer, then to printing.
 
 from __future__ import annotations
 
+import socket
 import time
 
 from .voices import VoiceProfile
 
 _CHUNK = 360
+
+# Android constants we need by hand so this module never dies on a missing class.
+STREAM_MUSIC = 3
+USAGE_MEDIA = 1
+CONTENT_TYPE_SPEECH = 1
 
 
 def _log(msg: str) -> None:
@@ -37,9 +43,23 @@ class AndroidSpeaker:
         self.voice_quality = 0
         self._tts = None
         self._ready = False
+        self.network_ok = True
+        self.needs_network_voice = False
+        self.last_error = ""
         self._init()
 
     # ------------------------------------------------------------------ setup
+    @staticmethod
+    def network_up(timeout: float = 3.0) -> bool:
+        """A network voice is silent without data, so ask before choosing one."""
+        for host in ("api.groq.com", "8.8.8.8"):
+            try:
+                socket.create_connection((host, 443), timeout=timeout).close()
+                return True
+            except OSError:
+                continue
+        return False
+
     def _init(self) -> None:
         try:
             from jnius import PythonJavaClass, autoclass, cast, java_method
@@ -73,12 +93,42 @@ class AndroidSpeaker:
             return
 
         try:
+            self._route_to_speaker()
             self._apply_voice()
             self._tts.setPitch(float(self.profile.pitch))
             self._tts.setSpeechRate(float(self.profile.rate))
             self.ok = True
         except Exception:  # noqa: BLE001
             self.ok = False
+
+    def _route_to_speaker(self) -> None:
+        """Without this some phones play her into nothing at all."""
+        try:
+            from jnius import autoclass, cast
+
+            builder = autoclass("android.media.AudioAttributes$Builder")()
+            builder.setUsage(USAGE_MEDIA)
+            builder.setContentType(CONTENT_TYPE_SPEECH)
+            attributes = builder.build()
+            self._tts.setAudioAttributes(cast("android.media.AudioAttributes", attributes))
+        except Exception:  # noqa: BLE001 - old Android, keep going
+            pass
+
+    def media_volume(self) -> tuple[int, int]:
+        """How loud the media stream is, so we can tell you why she is silent."""
+        try:
+            from jnius import autoclass, cast
+
+            activity = autoclass("org.kivy.android.PythonActivity").mActivity
+            context = cast("android.content.Context", activity)
+            manager = autoclass("android.media.AudioManager")
+            audio = context.getSystemService(context.AUDIO_SERVICE)
+            return (
+                int(audio.getStreamVolume(manager.STREAM_MUSIC)),
+                int(audio.getStreamMaxVolume(manager.STREAM_MUSIC)),
+            )
+        except Exception:  # noqa: BLE001
+            return (-1, -1)
 
     def _apply_voice(self) -> None:
         """Choose the most human sounding English voice the device has."""
@@ -89,10 +139,12 @@ class AndroidSpeaker:
         if not voices:
             return
 
+        online = self.network_up()
+        self.network_ok = online
         best = None
         best_score = -1.0
         for voice in voices:
-            score = self._score(voice)
+            score = self._score(voice, online)
             if score > best_score:
                 best, best_score = voice, score
         if best is None or best_score <= 0:
@@ -101,10 +153,11 @@ class AndroidSpeaker:
             self._tts.setVoice(best)
             self.voice_name = str(best.getName())
             self.voice_quality = int(best.getQuality())
+            self.needs_network_voice = bool(best.isNetworkConnectionRequired())
         except Exception:  # noqa: BLE001
             return
 
-    def _score(self, voice) -> float:
+    def _score(self, voice, network_up: bool = True) -> float:
         try:
             name = str(voice.getName()).lower()
             locale = voice.getLocale()
@@ -120,7 +173,9 @@ class AndroidSpeaker:
 
         score = 1.0
         if network:
-            score += 50.0  # Google's neural voices live here
+            # Google's neural voices live here, but they are silent without data,
+            # so they only win when the phone really is online.
+            score += 50.0 if network_up else -20.0
         score += min(quality, 500) / 20.0
         if country in {"US", "GB"}:
             score += 8.0
@@ -133,22 +188,41 @@ class AndroidSpeaker:
 
     # ------------------------------------------------------------------ speak
     def say(self, text: str) -> bool:
+        self.last_error = ""
         if not self.ok or self._tts is None:
+            self.last_error = "the phone's speech engine would not start"
             return False
         try:
             from jnius import autoclass
 
             text_to_speech = autoclass("android.speech.tts.TextToSpeech")
-            for chunk in _chunks(text, _CHUNK):
+            Bundle = autoclass("android.os.Bundle")
+            params = Bundle()
+            params.putInt(text_to_speech.Engine.KEY_PARAM_STREAM, STREAM_MUSIC)
+            params.putFloat(text_to_speech.Engine.KEY_PARAM_VOLUME, 1.0)
+            for index, chunk in enumerate(_chunks(text, _CHUNK)):
+                queue = text_to_speech.QUEUE_FLUSH if index == 0 else text_to_speech.QUEUE_ADD
                 self._tts.speak(
-                    chunk,
-                    text_to_speech.QUEUE_ADD,
-                    None,
-                    f"shack-{int(time.time() * 1000)}",
+                    chunk, queue, params, f"shack-{int(time.time() * 1000)}-{index}"
                 )
             return True
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            self.last_error = f"speaking failed ({exc.__class__.__name__})"
             return False
+
+    def diagnose(self) -> str:
+        """One line a person can act on."""
+        parts = ["engine " + ("ready" if self.ok else "NOT ready")]
+        if self.voice_name:
+            parts.append("voice " + self.voice_name)
+        if self.needs_network_voice:
+            parts.append("network voice" + ("" if self.network_ok else ", and there is no data"))
+        volume, top = self.media_volume()
+        if volume >= 0:
+            parts.append(f"media volume {volume} of {top}" + (" (MUTED)" if volume == 0 else ""))
+        if self.last_error:
+            parts.append(self.last_error)
+        return ", ".join(parts)
 
     def apply(self, profile: VoiceProfile) -> None:
         self.profile = profile

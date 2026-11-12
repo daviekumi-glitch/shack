@@ -2,6 +2,29 @@
 
 Every change, in plain language. Newest first.
 
+## 2.1.5 - she can be heard, and she can hear you
+
+Two real faults, found by reading the phone code.
+
+*Silence.* She was choosing Google's neural voice, which only works over the
+network. With weak or missing data that voice plays nothing at all, so the screen
+animated while the phone stayed quiet. Now she checks whether the phone is online
+before picking that voice and falls back to a voice stored on the device, so she
+talks with or without data. Her speech is also routed to the media stream at full
+volume, which some phones need before they will play a word.
+
+*The microphone.* Android's recogniser returns up to a thousand candidate
+sentences, and the app was joining all of them into one long nonsense sentence
+before sending it to the model. It now uses the best sentence only. It also asked
+for offline recognition by default, which fails silently when the offline language
+pack was never downloaded, so it now asks for online recognition. The microphone
+permission is requested and, if refused, you get the exact Settings path to fix it.
+Every recogniser error is now a plain sentence: no data, blocked microphone, heard
+nothing, or recogniser busy.
+
+*New /sound command.* It reports the speech engine, the chosen voice, whether that
+voice needs data, the media volume level, and says a test line out loud.
+
 ## 2.1.4 - the new look
 
 The whole screen is redesigned after the Aura reference you sent, with SHACK in place of the name.

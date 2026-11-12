@@ -125,6 +125,8 @@ class Voice:
     def can_listen(self) -> bool:
         return self.stt is not None or self.recorder is not None or self._android_stt is not None
 
+    listen_error = ""
+
     def describe(self) -> str:
         where = {
             "android": "Android",
@@ -267,21 +269,94 @@ class Voice:
         except EOFError:
             return ""
 
-    def _listen_android(self, seconds: int = 12) -> str:
-        """One shot of Android's own recogniser, via plyer."""
+    def mic_permission(self) -> str:
+        """Ask for the microphone once, and say plainly if it is refused."""
         try:
-            self._android_stt.start()
+            from android.permissions import Permission, check_permission, request_permissions
+        except Exception:  # noqa: BLE001 - not Android, or no permission module
+            return "unknown"
+        try:
+            if check_permission(Permission.RECORD_AUDIO):
+                return "granted"
+            request_permissions([Permission.RECORD_AUDIO])
+            deadline = time.time() + 8
+            while time.time() < deadline:
+                if check_permission(Permission.RECORD_AUDIO):
+                    return "granted"
+                time.sleep(0.3)
+            return "denied"
+        except Exception as exc:  # noqa: BLE001
+            return f"error ({exc.__class__.__name__})"
+
+    def _listen_android(self, seconds: int = 15) -> str:
+        """One shot of Android's own recogniser.
+
+        Two things matter here. The recogniser returns up to a thousand candidate
+        sentences, so only the best one is used; joining them all used to send
+        nonsense to the model. And it defaults to offline recognition, which
+        silently fails when the offline language pack was never downloaded, so we
+        ask for the online recogniser instead.
+        """
+        self.listen_error = ""
+        stt = self._android_stt
+        if stt is None:
+            self.listen_error = "this phone has no speech recogniser"
+            return ""
+        permission = self.mic_permission()
+        if permission == "denied":
+            self.listen_error = (
+                "the microphone is blocked. Open Settings, Apps, SHACK, Permissions, "
+                "and allow Microphone, then try the mic again"
+            )
+            return ""
+        try:
+            stt.errors = []
+            stt.results = []
+            stt.partial_results = []
+            stt.prefer_offline = False
+            stt.language = "en-US"
+            stt.start()
             deadline = time.time() + seconds
             while time.time() < deadline:
-                time.sleep(0.3)
-                if not getattr(self._android_stt, "listening", False):
+                time.sleep(0.25)
+                if not getattr(stt, "listening", False):
                     break
-            results = getattr(self._android_stt, "results", None) or []
-            text = " ".join(str(r) for r in results).strip()
-            self._android_stt.stop()
-            return text
-        except Exception:  # noqa: BLE001 - recogniser missing or denied
+            else:
+                stt.stop()
+
+            results = [str(r).strip() for r in (getattr(stt, "results", None) or []) if str(r).strip()]
+            errors = [str(e) for e in (getattr(stt, "errors", None) or [])]
+            try:
+                stt.stop()
+            except Exception:  # noqa: BLE001
+                pass
+            if results:
+                return results[0]
+            if errors:
+                self.listen_error = self._mic_error(errors[-1])
+            else:
+                self.listen_error = "no speech reached the recogniser"
             return ""
+        except Exception as exc:  # noqa: BLE001 - recogniser missing or denied
+            self.listen_error = f"the recogniser failed ({exc.__class__.__name__})"
+            return ""
+
+    @staticmethod
+    def _mic_error(raw: str) -> str:
+        """Turn Google's error codes into something a person can act on."""
+        table = {
+            "insufficient_permissions": "the microphone is blocked. Allow Microphone in Settings, Apps, SHACK",
+            "network": "speech recognition needs a data connection and there is none",
+            "network_timeout": "speech recognition timed out on the network. Try again on wifi",
+            "audio": "the phone could not open the microphone. Something else may be using it",
+            "recognizer_busy": "the recogniser was busy. Wait a second and try again",
+            "no_match": "I heard something but could not make out words",
+            "speech_timeout": "I did not hear any speech. Tap Mic and speak right away",
+            "server": "Google's recognition server refused. Try again on wifi",
+            "client": "the recogniser was interrupted",
+        }
+        code = raw.split("error:")[-1].strip() if "error:" in raw else raw.strip()
+        return table.get(code, f"speech recognition failed ({code})")
 
     def record_and_transcribe(self, brain, seconds: int = 6) -> str:
         """Record a clip with termux-microphone-record and transcribe it."""

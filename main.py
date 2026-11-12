@@ -571,6 +571,24 @@ class ShackScreen(BoxLayout):
 
         threading.Thread(target=work, daemon=True).start()
 
+    def check_sound(self) -> None:
+        """Say, in plain words, why the phone is quiet."""
+        if self.agent is None:
+            self.note("Not ready yet.")
+            return
+        android = getattr(self.agent.voice, "_android", None)
+        lines = [f"Voice: {self.agent.voice.profile.label}."]
+        if android is None:
+            lines.append("No Android speech engine is loaded, so she cannot talk out loud.")
+        else:
+            lines.append(android.diagnose().capitalize() + ".")
+            if getattr(android, "last_error", ""):
+                lines.append(android.last_error.capitalize() + ".")
+        lines.append("If it is quiet: turn the media volume up, check the phone is not on silent, and in Android Settings, System, Languages, Text-to-speech, make sure a Google speech engine is installed.")
+        for line in lines:
+            self.note(line, "note")
+        self.say_with_face("Testing one, two, three. Can you hear me now?")
+
     def listen(self) -> None:
         if self.agent is None:
             self.note("Not ready yet.")
@@ -585,7 +603,8 @@ class ShackScreen(BoxLayout):
                 if heard:
                     self.ask(heard)
                 else:
-                    self.note("I didn't catch that. Try again or type it.", "note")
+                    reason = getattr(self.agent.voice, "listen_error", "") or "I didn't catch that."
+                    self.note(f"{reason}.", "note")
             Clock.schedule_once(apply, 0)
 
         threading.Thread(target=work, daemon=True).start()
@@ -627,9 +646,11 @@ class ShackScreen(BoxLayout):
             self.prompt_for_key()
         elif cmd == "/test":
             self.check_brain()
+        elif cmd == "/sound":
+            self.check_sound()
         else:
             self.note(
-                "Commands: /test /key /facts /tasks /reminders /voice /voices /reset /exit"
+                "Commands: /test /sound /key /facts /tasks /reminders /voice /voices /reset /exit"
             )
 
 
