@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable
 
 
@@ -69,6 +69,9 @@ class ToolRegistry:
     # ------------------------------------------------------------------ intro
     def get(self, name: str) -> Tool | None:
         return self._tools.get(name)
+
+    def remove(self, name: str) -> None:
+        self._tools.pop(name, None)
 
     def names(self) -> list[str]:
         return sorted(self._tools)

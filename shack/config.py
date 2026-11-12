@@ -61,6 +61,7 @@ class Config:
     voice_out: bool = True
     voice_in: bool = False
     tts_rate: int = 0
+    voice_profile: str = "rumi"
     wake_word: str = "hey shack"
     safe_mode: bool = True
     max_tool_rounds: int = 6
@@ -102,6 +103,7 @@ class Config:
             voice_out=_as_bool(os.environ.get("SHACK_VOICE_OUT"), True),
             voice_in=_as_bool(os.environ.get("SHACK_VOICE_IN"), False),
             tts_rate=_as_int(os.environ.get("SHACK_TTS_RATE"), 0),
+            voice_profile=(os.environ.get("SHACK_VOICE") or "rumi").strip().lower(),
             wake_word=(os.environ.get("SHACK_WAKE_WORD") or "hey shack").strip().lower(),
             safe_mode=_as_bool(os.environ.get("SHACK_SAFE_MODE"), True),
             max_tool_rounds=_as_int(os.environ.get("SHACK_MAX_TOOL_ROUNDS"), 6),

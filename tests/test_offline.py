@@ -12,6 +12,8 @@ from pathlib import Path
 from shack.config import Config
 from shack.memory import Memory
 from shack.tools import ToolContext, build_registry
+from shack import voices
+from shack.voice import Voice, clean_for_speech, pace
 
 
 def make_ctx(tmp: Path) -> ToolContext:
@@ -111,6 +113,36 @@ class HistoryTests(unittest.TestCase):
         older = memory.older_messages(keep=2)
         self.assertEqual([m["content"] for m in older], ["line 0", "line 1", "line 2"])
         memory.close()
+
+
+class VoiceTests(unittest.TestCase):
+    def test_default_voice_is_the_warm_one(self) -> None:
+        profile = voices.get(None)
+        self.assertEqual(profile.key, "rumi")
+        self.assertGreater(profile.pitch, 1.0)   # sits a little high
+        self.assertLess(profile.rate, 1.0)       # and takes its time
+
+    def test_unknown_voice_falls_back(self) -> None:
+        self.assertEqual(voices.get("does-not-exist").key, "rumi")
+        self.assertEqual(voices.get("ORION").key, "orion")
+
+    def test_termux_commands_carry_pitch_and_rate(self) -> None:
+        voice = Voice(enabled=False, profile="rumi")
+        cmds = voice._commands("/usr/bin/termux-tts-speak", "termux-tts-speak", "hello")
+        self.assertIn("-p", cmds[0])
+        self.assertIn("1.06", " ".join(cmds[0]))
+        self.assertIn("0.94", " ".join(cmds[0]))
+        self.assertEqual(cmds[-1], ["/usr/bin/termux-tts-speak", "hello"])
+
+    def test_espeak_speed_follows_the_profile(self) -> None:
+        voice = Voice(enabled=False, profile="orion")
+        cmd = voice._commands("/usr/bin/espeak-ng", "espeak-ng", "hi")[0]
+        self.assertIn("en+m3", cmd)
+        self.assertLess(int(cmd[cmd.index("-s") + 1]), 175)  # slower than default
+
+    def test_speech_is_cleaned_and_split(self) -> None:
+        self.assertEqual(clean_for_speech("**hi** 🎉 — ok"), "hi , ok")
+        self.assertEqual(pace("One. Two! Three?"), ["One.", "Two!", "Three?"])
 
 
 if __name__ == "__main__":

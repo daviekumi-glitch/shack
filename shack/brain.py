@@ -125,7 +125,13 @@ class Brain:
                 resp = self._session.post(
                     url,
                     headers={"Authorization": f"Bearer {self.api_key}"},
-                    files={"file": (Path(audio_path).name, handle, "audio/mp4")},
+                    files={
+                        "file": (
+                            Path(audio_path).name,
+                            handle,
+                            _audio_mime(audio_path),
+                        )
+                    },
                     data=data,
                     timeout=self.timeout,
                 )
@@ -155,6 +161,17 @@ class Brain:
             max_tokens=400,
         )
         return (message.get("content") or "").strip()
+
+
+_MIMES = {
+    ".m4a": "audio/mp4", ".mp4": "audio/mp4", ".wav": "audio/wav",
+    ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".oga": "audio/ogg",
+    ".webm": "audio/webm", ".flac": "audio/flac", ".3gp": "audio/3gpp",
+}
+
+
+def _audio_mime(path: Any) -> str:
+    return _MIMES.get(Path(path).suffix.lower(), "audio/mp4")
 
 
 def _error_detail(resp: Any) -> str:

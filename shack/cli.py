@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from datetime import datetime
 
-from . import ui
+from . import ui, voices
 from .agent import ShackAgent
 from .brain import BrainError
 from .config import Config
@@ -22,7 +21,7 @@ HELP = """Commands
   /tasks             open to-dos
   /reminders         pending reminders
   /reset             forget this conversation (keeps facts and tasks)
-  /voice on|off      speak replies or stay silent
+  /voice [name]      speak replies, stay silent, or change the voice
   /listen on|off     take input from the microphone
   /model [name]      show or change the model for this session
   /session           where memory is stored
@@ -79,8 +78,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.no_shell:
-        for name in ("run_shell",):
-            agent.registry._tools.pop(name, None)  # noqa: SLF001 - intentional
+        agent.registry.remove("run_shell")
 
     banner = config.voice_out and agent.voice.can_speak
     ui.banner(config.model, banner)
@@ -89,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     name = agent.memory.get_fact("user_name")
     opening = _greeting(name)
     agent.say(opening)
-    if not name and not agent._stop.is_set():  # noqa: SLF001
+    if not name and not agent.stopped:
         agent.say("What should I call you?")
         reply = agent.voice.listen() if config.voice_in else _typed()
         if reply:
@@ -190,9 +188,24 @@ def handle_command(agent: ShackAgent, config: Config, text: str) -> bool:
         agent.memory.reset_conversation()
         ui.info("conversation cleared, facts and tasks kept")
     elif command == "/voice":
-        config.voice_out = rest.lower() not in {"off", "no", "0"}
-        agent.voice.enabled = config.voice_out
-        ui.info(f"voice {'on' if config.voice_out else 'off'}")
+        wanted = rest.lower().strip()
+        if not wanted:
+            ui.info(agent.voice.describe())
+            ui.info("/voice on|off to switch sound, /voices to list voices")
+        elif wanted in {"off", "no", "0", "on", "yes", "1"}:
+            config.voice_out = wanted not in {"off", "no", "0"}
+            agent.voice.enabled = config.voice_out
+            ui.info(f"voice {'on' if config.voice_out else 'off'}")
+        elif wanted in voices.names():
+            ui.info(agent.voice.set_profile(wanted))
+            config.voice_profile = wanted
+            agent.say("This is how I sound now.")
+        else:
+            ui.warn(f"no voice called {wanted}")
+            ui.info(voices.describe_all())
+    elif command == "/voices":
+        ui.info(agent.voice.describe())
+        print(voices.describe_all())
     elif command == "/listen":
         config.voice_in = rest.lower() in {"on", "yes", "1"}
         ui.info(f"microphone {'on' if config.voice_in else 'off'}")
@@ -221,9 +234,9 @@ def self_check(config: Config) -> int:
 
     print("2. memory")
     try:
-        from .memory import Memory
+        from .memory import create_memory
 
-        probe = Memory(config.db_path, session="self-check")
+        probe = create_memory(config.db_path, session="self-check")
         probe.set_fact("self_check", "ok")
         assert probe.get_fact("self_check") == "ok"
         probe.add_task("self check task")

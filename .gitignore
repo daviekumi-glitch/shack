@@ -8,3 +8,7 @@ memory.txt
 .venv/
 venv/
 .DS_Store
+.buildozer/
+bin/
+*.apk
+assets/*.pyc

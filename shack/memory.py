@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-import sqlite3
 import threading
 import time
 from pathlib import Path
 from typing import Any
+
+try:
+    import sqlite3
+except ImportError:  # some Android Python builds ship without sqlite3
+    sqlite3 = None  # type: ignore[assignment]
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
@@ -237,3 +241,15 @@ class Memory:
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+
+def create_memory(path: Path, session: str | None = None):
+    """SQLite when available, otherwise the JSON store with the same API."""
+    if sqlite3 is not None:
+        try:
+            return Memory(path, session=session)
+        except Exception:  # noqa: BLE001 - fall through to the JSON store
+            pass
+    from .simple_memory import SimpleMemory
+
+    return SimpleMemory(Path(f"{path}.json"), session=session)

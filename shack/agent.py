@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from datetime import datetime
 
 from . import ui
 from .brain import Brain, BrainError
 from .config import Config
-from .memory import Memory
+from .memory import create_memory
 from .tools import ToolContext, build_registry
 from .voice import Voice
 
@@ -54,13 +53,17 @@ class ShackAgent:
     def __init__(self, config: Config, session: str | None = None) -> None:
         self.config = config
         config.ensure_dirs()
-        self.memory = Memory(config.db_path, session=session)
+        self.memory = create_memory(config.db_path, session=session)
         self.brain = Brain(
             api_key=config.api_key,
             model=config.model,
             timeout=config.request_timeout,
         )
-        self.voice = Voice(enabled=config.voice_out, rate=config.tts_rate)
+        self.voice = Voice(
+            enabled=config.voice_out,
+            rate=config.tts_rate,
+            profile=config.voice_profile,
+        )
         self.registry = build_registry()
         self._speak_lock = threading.Lock()
         self._stop = threading.Event()
@@ -73,6 +76,10 @@ class ShackAgent:
             voice=self.voice,
             confirm=self.confirm,
         )
+
+    @property
+    def stopped(self) -> bool:
+        return self._stop.is_set()
 
     # ------------------------------------------------------------------ voice
     def say(self, text: str) -> None:

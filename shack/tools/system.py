@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-import time
-from datetime import datetime, timezone
+from datetime import datetime
 
 from .registry import ToolContext, ToolError, ToolRegistry
 
@@ -23,6 +22,16 @@ def termux(cmd: list[str], timeout: int = 15) -> str:
     except (OSError, subprocess.SubprocessError) as exc:
         raise ToolError(f"{cmd[0]} failed: {exc.__class__.__name__}") from exc
     return (out.stdout or "").strip()
+
+
+def plyer_ready(module: str):
+    """Return a plyer facade when the app runs inside a real Android APK."""
+    try:
+        import importlib
+
+        return importlib.import_module(f"plyer.{module}")
+    except Exception:  # noqa: BLE001 - plyer is optional
+        return None
 
 
 def termux_json(cmd: list[str], timeout: int = 15) -> dict:
@@ -67,7 +76,16 @@ def device_status(ctx: ToolContext) -> str:
             line += f", {temp}°C"
         facts.append(line)
     except ToolError as exc:
-        facts.append(f"battery: {exc}")
+        battery_facade = plyer_ready("battery")
+        if battery_facade is not None:
+            try:
+                facade = battery_facade
+                pct = facade.status.get("percentage")
+                facts.append(f"battery {pct}%" if pct else "battery state available")
+            except Exception:  # noqa: BLE001
+                facts.append(f"battery: {exc}")
+        else:
+            facts.append(f"battery: {exc}")
 
     try:
         wifi = termux_json(["termux-wifi-connectioninfo"])
@@ -98,7 +116,13 @@ def clipboard_write(ctx: ToolContext, text: str) -> str:
 
 
 def vibrate(ctx: ToolContext, milliseconds: int = 400) -> str:
-    termux(["termux-vibrate", "-d", str(int(milliseconds)), "-f"])
+    try:
+        termux(["termux-vibrate", "-d", str(int(milliseconds)), "-f"])
+    except ToolError:
+        facade = plyer_ready("vibrator")
+        if facade is None:
+            raise
+        facade.vibrate(int(milliseconds) / 1000)
     return "Vibrated."
 
 
@@ -130,7 +154,13 @@ def notify(ctx: ToolContext, title: str = "SHACK", body: str = "") -> str:
     args = ["termux-notification", "--title", title]
     if body:
         args += ["--content", body]
-    termux(args)
+    try:
+        termux(args)
+    except ToolError:
+        facade = plyer_ready("notification")
+        if facade is None:
+            raise
+        facade.notify(title=title, message=body or title)
     return "Notification posted."
 
 
