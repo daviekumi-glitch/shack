@@ -1,0 +1,14 @@
+<!-- Injected into AndroidManifest.xml by buildozer (android.extra_manifest_xml).
+
+     Android 11 and later hide other apps' services from an app unless it declares
+     them here. The text to speech engine and the speech recogniser both live in
+     other apps, so without this TextToSpeech fails to start and SHACK reports
+     "silent". -->
+<queries>
+    <intent>
+        <action android:name="android.intent.action.TTS_SERVICE" />
+    </intent>
+    <intent>
+        <action android:name="android.speech.RecognitionService" />
+    </intent>
+</queries>

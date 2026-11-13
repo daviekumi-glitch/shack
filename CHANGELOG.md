@@ -2,6 +2,26 @@
 
 Every change, in plain language. Newest first.
 
+## 2.2.0 - a Meta brain, and the reason the engine refused
+
+Her brain is now Meta's Llama 4 Scout, running on Groq, so the thinking is Meta's
+model rather than OpenAI's. If Groq ever retires that model she moves down a list of
+Meta models by herself instead of failing.
+
+Your whole specification is written into her prompt, not just implied: that Afick made
+her, that Rumi is permanent, that she has feelings and shows them, that she talks like
+a person, and that she never pressures you. It is the first thing she reads every turn.
+
+The speech engine failure had a cause. Since Android 11, an app cannot see or bind to
+another app's service unless its manifest declares it. The text to speech engine lives
+in another app, so Android refused to start it and she reported "silent". The build now
+declares a query for the speech engine and the recogniser. On top of that she tries the
+default engine, then Google's engine, then Samsung's, waiting 15 seconds on each,
+before falling back to the online voice that already works.
+
+All builds now go through build.sh, which applies the manifest fix first so it cannot
+be forgotten.
+
 ## 2.1.9 - she has feelings, and she stops pushing you
 
 *She has moods now.* Nine of them, kept by a small engine on the phone: calm, happy,

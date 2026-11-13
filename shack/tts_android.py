@@ -40,6 +40,7 @@ class AndroidSpeaker:
     def __init__(self, profile: VoiceProfile) -> None:
         self.profile = profile
         self.ok = False
+        self.engine_used = ""
         self.voice_name = ""
         self.voice_quality = 0
         self._tts = None
@@ -108,17 +109,39 @@ class AndroidSpeaker:
             activity = autoclass("org.kivy.android.PythonActivity").mActivity
             context = cast("android.content.Context", activity)
             tts_class = autoclass("android.speech.tts.TextToSpeech")
-            self._listener = _Listener()
-            self._tts = tts_class(context, self._listener)
+            # The default engine sometimes refuses this app while another installed
+            # engine will start, so each known engine gets its own attempt.
+            for engine in (None, "com.google.android.tts", "com.samsung.android.tts"):
+                self._listener = _Listener()
+                try:
+                    if engine:
+                        self._tts = tts_class(context, self._listener, engine)
+                        self.engine_used = engine
+                    else:
+                        self._tts = tts_class(context, self._listener)
+                        self.engine_used = "default"
+                except Exception:  # noqa: BLE001
+                    self._tts = None
+                if self._tts is not None:
+                    deadline = time.time() + 15
+                    while time.time() < deadline and not self._ready:
+                        time.sleep(0.15)
+                    if self._ready:
+                        break
+                    try:
+                        self._tts.shutdown()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self._tts = None
         except Exception:  # noqa: BLE001
             self._tts = None
             return
 
-        deadline = time.time() + 15
-        while time.time() < deadline and not self._ready:
-            time.sleep(0.15)
         if not self._ready or self._tts is None:
-            self.last_error = "the phone's speech engine did not start within 15 seconds"
+            self.last_error = (
+                "no speech engine on this phone would start: the default, Google and "
+                "Samsung engines all refused"
+            )
             return
 
         if self._progress is not None:

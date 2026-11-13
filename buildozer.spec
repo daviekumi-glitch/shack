@@ -13,7 +13,7 @@ source.include_exts = py,png,jpg,kv,atlas,json,txt,env
 source.exclude_dirs = tests,legacy,bin,.git,.github,.buildozer,__pycache__,shack.egg-info
 source.exclude_patterns = .env,*.db,*.db-journal
 
-version = 2.1.9
+version = 2.2.0
 
 # requests pulls in urllib3, chardet and idna itself, but p4a wants them named.
 requirements = python3,kivy,requests,urllib3,certifi,idna,charset-normalizer,plyer
@@ -26,7 +26,10 @@ presplash.filename = %(source.dir)s/assets/presplash.png
 orientation = portrait
 fullscreen = 0
 
-android.permissions = INTERNET,RECORD_AUDIO,VIBRATE,POST_NOTIFICATIONS
+android.permissions = INTERNET,RECORD_AUDIO,VIBRATE,POST_NOTIFICATIONS,MODIFY_AUDIO_SETTINGS
+# Android 11+ needs the speech engine and recogniser declared as queries
+# or TextToSpeech will not start at all.
+android.extra_manifest_xml = %(source.dir)s/manifests/extra_manifest.xml
 android.api = 31
 android.minapi = 24
 android.ndk = 25b

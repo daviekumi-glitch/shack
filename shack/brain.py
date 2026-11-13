@@ -16,6 +16,15 @@ except ImportError as exc:  # pragma: no cover
 
 BASE_URL = "https://api.groq.com/openai/v1"
 
+# Tried in order when the configured model is unknown to the account, which happens
+# when a provider retires or renames one.
+MODEL_FALLBACKS = (
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "llama-3.3-70b-versatile",
+    "openai/gpt-oss-20b",
+)
+
 
 class BrainError(RuntimeError):
     """Raised when the model cannot be reached or refuses the request."""
@@ -102,7 +111,15 @@ class Brain:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
 
-        data = self._post("chat/completions", payload)
+        try:
+            data = self._post("chat/completions", payload)
+        except BrainError as exc:
+            replacement = self._next_model(exc)
+            if replacement is None:
+                raise
+            self.model = replacement
+            payload["model"] = replacement
+            data = self._post("chat/completions", payload)
         try:
             message = data["choices"][0]["message"]
         except (KeyError, IndexError) as exc:
@@ -112,6 +129,33 @@ class Brain:
             message = dict(message)
             message["content"] = "(no answer)"
         return message
+
+    def _next_model(self, exc: BrainError) -> str | None:
+        """Pick the next Meta model when this one does not exist on the account."""
+        text = str(exc).lower()
+        missing = any(
+            phrase in text
+            for phrase in (
+                "does not exist",
+                "not found",
+                "decommissioned",
+                "no longer supported",
+                "invalid model",
+                "model_not_found",
+            )
+        )
+        if not missing:
+            return None
+        try:
+            index = MODEL_FALLBACKS.index(self.model) + 1
+        except ValueError:
+            index = 0
+        while index < len(MODEL_FALLBACKS):
+            candidate = MODEL_FALLBACKS[index]
+            index += 1
+            if candidate != self.model:
+                return candidate
+        return None
 
     # ------------------------------------------------------------ transcribe
     def transcribe(self, audio_path: Path, language: str | None = None) -> str:

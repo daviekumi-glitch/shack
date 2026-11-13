@@ -10,7 +10,15 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-DEFAULT_MODEL = "openai/gpt-oss-20b"
+DEFAULT_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+
+# If a model is renamed or retired, try the next Meta model before giving up.
+FALLBACK_MODELS = (
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "llama-3.3-70b-versatile",
+    "openai/gpt-oss-20b",
+)
 DEFAULT_DATA_DIR = Path.home() / ".shack"
 
 _TRUE = {"1", "true", "yes", "on", "y"}
